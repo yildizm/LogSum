@@ -1,0 +1,193 @@
+{
+  "summary": {
+    "total_entries": 23,
+    "error_count": 0,
+    "warning_count": 0,
+    "time_range": {
+      "start": "2025-06-12T01:29:54.911185+01:00",
+      "end": "2025-06-12T01:29:54.911197+01:00",
+      "duration": "12.666µs"
+    }
+  },
+  "patterns": [
+    {
+      "pattern": {
+        "id": "network_timeout",
+        "name": "Network Timeout",
+        "description": "Network timeouts and connection issues",
+        "type": "error",
+        "regex": "(?i)(timeout|timed out|connection.*timeout|read timeout|write timeout)",
+        "severity": 3,
+        "tags": [
+          "network",
+          "timeout"
+        ]
+      },
+      "matches": 1,
+      "first_seen": "2025-06-12T01:29:54.911188+01:00",
+      "last_seen": "2025-06-12T01:29:54.911188+01:00",
+      "sample_entries": [
+        {
+          "timestamp": "2025-06-12T01:29:54.911188+01:00",
+          "level": 1,
+          "message": "2024-01-15 10:32:00 ERROR [database] Connection timeout after 30s",
+          "line_number": 7
+        }
+      ]
+    },
+    {
+      "pattern": {
+        "id": "null_pointer",
+        "name": "Null Pointer Exception",
+        "description": "Null pointer exceptions and similar errors",
+        "type": "error",
+        "keywords": [
+          "nullpointerexception",
+          "null pointer",
+          "segmentation fault",
+          "access violation",
+          "nil pointer"
+        ],
+        "severity": 3,
+        "tags": [
+          "exception",
+          "programming"
+        ]
+      },
+      "matches": 1,
+      "first_seen": "2025-06-12T01:29:54.911194+01:00",
+      "last_seen": "2025-06-12T01:29:54.911194+01:00",
+      "sample_entries": [
+        {
+          "timestamp": "2025-06-12T01:29:54.911194+01:00",
+          "level": 1,
+          "message": "2024-01-15 10:35:00 ERROR [web-server] 500 Internal Server Error: unexpected null pointer",
+          "line_number": 17
+        }
+      ]
+    },
+    {
+      "pattern": {
+        "id": "slow_query",
+        "name": "Slow Database Query",
+        "description": "Database queries taking too long",
+        "type": "performance",
+        "regex": "(?i)(slow query|query.*took.*[0-9]+.*ms|execution time.*[0-9]+.*ms)",
+        "keywords": [
+          "slow query",
+          "query timeout",
+          "long running query"
+        ],
+        "severity": 3,
+        "tags": [
+          "database",
+          "performance"
+        ]
+      },
+      "matches": 1,
+      "first_seen": "2025-06-12T01:29:54.911194+01:00",
+      "last_seen": "2025-06-12T01:29:54.911194+01:00",
+      "sample_entries": [
+        {
+          "timestamp": "2025-06-12T01:29:54.911194+01:00",
+          "level": 1,
+          "message": "2024-01-15 10:34:15 WARN [database] Slow query detected: SELECT * FROM large_table took 2.1s",
+          "line_number": 16
+        }
+      ]
+    },
+    {
+      "pattern": {
+        "id": "authentication_failure",
+        "name": "Authentication Failure",
+        "description": "Failed login attempts and authentication errors",
+        "type": "security",
+        "keywords": [
+          "authentication failed",
+          "login failed",
+          "invalid credentials",
+          "unauthorized access",
+          "access denied",
+          "permission denied"
+        ],
+        "severity": 3,
+        "tags": [
+          "auth",
+          "security"
+        ]
+      },
+      "matches": 1,
+      "first_seen": "2025-06-12T01:29:54.911192+01:00",
+      "last_seen": "2025-06-12T01:29:54.911192+01:00",
+      "sample_entries": [
+        {
+          "timestamp": "2025-06-12T01:29:54.911192+01:00",
+          "level": 1,
+          "message": "2024-01-15 10:33:30 ERROR [auth-service] Authentication failed: invalid token",
+          "line_number": 14
+        }
+      ]
+    },
+    {
+      "pattern": {
+        "id": "database_connection_error",
+        "name": "Database Connection Failure",
+        "description": "Database connection failures and timeouts",
+        "type": "error",
+        "keywords": [
+          "database connection failed",
+          "connection timeout",
+          "database unreachable",
+          "connection refused",
+          "database error"
+        ],
+        "severity": 4,
+        "tags": [
+          "database",
+          "connectivity"
+        ]
+      },
+      "matches": 1,
+      "first_seen": "2025-06-12T01:29:54.911188+01:00",
+      "last_seen": "2025-06-12T01:29:54.911188+01:00",
+      "sample_entries": [
+        {
+          "timestamp": "2025-06-12T01:29:54.911188+01:00",
+          "level": 1,
+          "message": "2024-01-15 10:32:00 ERROR [database] Connection timeout after 30s",
+          "line_number": 7
+        }
+      ]
+    }
+  ],
+  "insights": [
+    {
+      "type": "performance",
+      "severity": 2,
+      "title": "Slow Response Times Detected",
+      "description": "Detected 2 log entries indicating slow response times or timeouts",
+      "confidence": 0.8,
+      "evidence_count": 2
+    },
+    {
+      "type": "performance",
+      "severity": 3,
+      "title": "Performance Issue: Slow Database Query",
+      "description": "Pattern 'Slow Database Query' detected 1 times, indicating potential performance issues",
+      "confidence": 0.7347826086956522,
+      "evidence_count": 1
+    }
+  ],
+  "timeline": {
+    "bucket_size": "5m0s",
+    "buckets": [
+      {
+        "start": "2025-06-12T01:25:00+01:00",
+        "end": "2025-06-12T01:30:00+01:00",
+        "entry_count": 23,
+        "error_count": 0,
+        "warn_count": 0
+      }
+    ]
+  }
+}

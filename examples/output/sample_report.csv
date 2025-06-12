@@ -1,0 +1,6 @@
+Pattern ID,Pattern Name,Pattern Type,Match Count,First Seen,Last Seen,Severity,Sample Message
+null_pointer,Null Pointer Exception,error,1,2025-06-08 13:49:42,2025-06-08 13:49:42,3,2024-01-15 10:35:00 ERROR [web-server] 500 Internal Server Error: unexpected null pointer
+network_timeout,Network Timeout,error,1,2025-06-08 13:49:42,2025-06-08 13:49:42,3,2024-01-15 10:32:00 ERROR [database] Connection timeout after 30s
+database_connection_error,Database Connection Failure,error,1,2025-06-08 13:49:42,2025-06-08 13:49:42,4,2024-01-15 10:32:00 ERROR [database] Connection timeout after 30s
+slow_query,Slow Database Query,performance,1,2025-06-08 13:49:42,2025-06-08 13:49:42,3,2024-01-15 10:34:15 WARN [database] Slow query detected: SELECT * FROM large_table took 2.1s
+authentication_failure,Authentication Failure,security,1,2025-06-08 13:49:42,2025-06-08 13:49:42,3,2024-01-15 10:33:30 ERROR [auth-service] Authentication failed: invalid token

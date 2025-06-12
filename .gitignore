@@ -1,0 +1,57 @@
+# Binaries
+/logsum
+cmd/logsum/logsum
+*.exe
+*.dll
+*.so
+*.dylib
+dist/
+
+# Test binary, built with `go test -c`
+*.test
+
+# Output of go coverage tool
+*.out
+coverage.out
+coverage.html
+
+# Go workspace file
+go.work
+
+# Dependency directories
+vendor/
+
+# Build directories
+build/
+dist/
+
+# IDE specific files
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# OS specific files
+.DS_Store
+Thumbs.db
+
+# Log files (but not test fixtures)
+*.log
+!testdata/*.log
+
+# Environment files
+.env
+.env.local
+
+# Temporary files
+tmp/
+temp/
+
+# Recording script and demo files (maintainer only)
+demo.tape
+demo.gif
+
+# Generated reports (not committed examples)
+report.*
+*.bak

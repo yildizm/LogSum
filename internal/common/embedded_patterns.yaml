@@ -1,0 +1,237 @@
+---
+# Default patterns for LogSum log analysis
+# These patterns detect common error conditions, performance issues, and security events
+
+# Error Patterns
+- id: "database_connection_error"
+  name: "Database Connection Failure"
+  description: "Database connection failures and timeouts"
+  type: "error"
+  severity: 4
+  keywords:
+    - "database connection failed"
+    - "connection timeout"
+    - "database unreachable"
+    - "connection refused"
+    - "database error"
+  tags:
+    - "database"
+    - "connectivity"
+
+- id: "out_of_memory"
+  name: "Out of Memory Error"
+  description: "Memory exhaustion errors"
+  type: "error"
+  severity: 5
+  keywords:
+    - "out of memory"
+    - "memory exhausted"
+    - "oom killed"
+    - "java.lang.outofmemoryerror"
+    - "fatal: out of memory"
+  tags:
+    - "memory"
+    - "system"
+
+- id: "null_pointer"
+  name: "Null Pointer Exception"
+  description: "Null pointer exceptions and similar errors"
+  type: "error"
+  severity: 3
+  keywords:
+    - "nullpointerexception"
+    - "null pointer"
+    - "segmentation fault"
+    - "access violation"
+    - "nil pointer"
+  tags:
+    - "exception"
+    - "programming"
+
+- id: "file_not_found"
+  name: "File Not Found"
+  description: "Missing file or resource errors"
+  type: "error"
+  severity: 2
+  keywords:
+    - "file not found"
+    - "no such file"
+    - "filenotfoundexception"
+    - "missing resource"
+    - "path does not exist"
+  tags:
+    - "filesystem"
+    - "resources"
+
+- id: "network_timeout"
+  name: "Network Timeout"
+  description: "Network timeouts and connection issues"
+  type: "error"
+  severity: 3
+  regex: "(?i)(timeout|timed out|connection.*timeout|read timeout|write timeout)"
+  tags:
+    - "network"
+    - "timeout"
+
+# Performance Patterns
+- id: "slow_query"
+  name: "Slow Database Query"
+  description: "Database queries taking too long"
+  type: "performance"
+  severity: 3
+  regex: "(?i)(slow query|query.*took.*[0-9]+.*ms|execution time.*[0-9]+.*ms)"
+  keywords:
+    - "slow query"
+    - "query timeout"
+    - "long running query"
+  tags:
+    - "database"
+    - "performance"
+
+- id: "high_response_time"
+  name: "High Response Time"
+  description: "HTTP requests with high response times"
+  type: "performance"
+  severity: 3
+  regex: "(?i)(response time|latency).*([5-9][0-9]{2,}|[0-9]{4,}).*ms"
+  keywords:
+    - "high latency"
+    - "slow response"
+    - "taking too long"
+  tags:
+    - "http"
+    - "latency"
+
+- id: "memory_leak"
+  name: "Potential Memory Leak"
+  description: "Signs of memory leaks or high memory usage"
+  type: "performance"
+  severity: 4
+  keywords:
+    - "memory leak"
+    - "heap space"
+    - "memory usage high"
+    - "gc overhead"
+    - "memory pressure"
+  tags:
+    - "memory"
+    - "leak"
+
+# Security Patterns
+- id: "authentication_failure"
+  name: "Authentication Failure"
+  description: "Failed login attempts and authentication errors"
+  type: "security"
+  severity: 3
+  keywords:
+    - "authentication failed"
+    - "login failed"
+    - "invalid credentials"
+    - "unauthorized access"
+    - "access denied"
+    - "permission denied"
+  tags:
+    - "auth"
+    - "security"
+
+- id: "sql_injection"
+  name: "Potential SQL Injection"
+  description: "Suspicious SQL injection attempts"
+  type: "security"
+  severity: 5
+  regex: "(?i)(union.*select|drop.*table|insert.*into|delete.*from|';|'\\s*or\\s*'|'\\s*and\\s*')"
+  tags:
+    - "sql"
+    - "injection"
+    - "security"
+
+- id: "suspicious_user_agent"
+  name: "Suspicious User Agent"
+  description: "Suspicious or bot-like user agents"
+  type: "security"
+  severity: 2
+  keywords:
+    - "sqlmap"
+    - "nikto"
+    - "nessus"
+    - "burp"
+    - "scanner"
+    - "bot"
+  tags:
+    - "bot"
+    - "security"
+    - "scanning"
+
+# System Patterns
+- id: "disk_full"
+  name: "Disk Space Full"
+  description: "Disk space exhaustion errors"
+  type: "error"
+  severity: 4
+  keywords:
+    - "no space left"
+    - "disk full"
+    - "filesystem full"
+    - "out of disk space"
+    - "write failed"
+  tags:
+    - "disk"
+    - "storage"
+
+- id: "service_unavailable"
+  name: "Service Unavailable"
+  description: "Service unavailability and downtime"
+  type: "error"
+  severity: 4
+  keywords:
+    - "service unavailable"
+    - "service down"
+    - "connection refused"
+    - "server not responding"
+    - "503 service unavailable"
+  tags:
+    - "service"
+    - "availability"
+
+- id: "configuration_error"
+  name: "Configuration Error"
+  description: "Configuration and setup errors"
+  type: "error"
+  severity: 3
+  keywords:
+    - "configuration error"
+    - "config invalid"
+    - "missing configuration"
+    - "invalid settings"
+    - "setup failed"
+  tags:
+    - "config"
+    - "setup"
+
+# Anomaly Patterns
+- id: "unusual_error_burst"
+  name: "Unusual Error Burst"
+  description: "Sudden increase in error frequency"
+  type: "anomaly"
+  severity: 4
+  regex: "(?i)(error burst|multiple errors|cascading failure)"
+  keywords:
+    - "multiple failures"
+    - "error cascade"
+    - "system instability"
+  tags:
+    - "burst"
+    - "instability"
+
+- id: "repeated_warnings"
+  name: "Repeated Warnings"
+  description: "Same warning message repeated frequently"
+  type: "anomaly"
+  severity: 2
+  keywords:
+    - "warning repeated"
+    - "frequent warning"
+    - "repeated message"
+  tags:
+    - "repetition"
+    - "warnings"

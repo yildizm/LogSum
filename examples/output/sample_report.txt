@@ -1,0 +1,26 @@
+╔══════════════════════╗
+║ Log Analysis Summary ║
+╚══════════════════════╝
+
+📊 Statistics
+├─ Total Entries: 23
+├─ Errors: 0 (0.0%)
+├─ Warnings: 0 (0.0%)
+└─ Duration: 13.5µs
+
+🔍 Top Patterns
+├─ 🔴 Null Pointer Exception (1)
+├─ 🔴 Database Connection Failure (1)
+├─ 🔴 Network Timeout (1)
+├─ ⚠️ Slow Database Query (1)
+└─ 🔒 Authentication Failure (1)
+
+💡 Key Insights
+├─ ⚠️ Slow Response Times Detected (80% confidence)
+│  ████████░░ Detected 2 log entries indicating slow response times or timeouts
+└─ ❌ Performance Issue: Slow Database Query (73% confidence)
+   ███████░░░ Pattern 'Slow Database Query' detected 1 times, indicating potential performance issues
+
+📋 Recommendations
+• Optimize performance issues related to Slow Database Query
+• Review security concerns: Authentication Failure (1 occurrences)
