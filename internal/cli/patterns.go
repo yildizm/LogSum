@@ -7,7 +7,6 @@ import (
 
 	"github.com/spf13/cobra"
 	"github.com/yildizm/LogSum/internal/common"
-	"github.com/yildizm/LogSum/internal/parser"
 )
 
 func newPatternsCommand() *cobra.Command {
@@ -79,7 +78,7 @@ func runPatternsList(directory string) error {
 	fmt.Printf("Found %d patterns in %s:\n\n", len(patterns), directory)
 
 	// Group by type for better organization
-	typeGroups := make(map[parser.PatternType][]*parser.Pattern)
+	typeGroups := make(map[common.PatternType][]*common.Pattern)
 	for _, pattern := range patterns {
 		typeGroups[pattern.Type] = append(typeGroups[pattern.Type], pattern)
 	}
@@ -126,11 +125,11 @@ func runPatternsValidate(files []string) error {
 	return nil
 }
 
-func loadPatternsFromDirectoryCmd(directory string) ([]*parser.Pattern, error) {
+func loadPatternsFromDirectoryCmd(directory string) ([]*common.Pattern, error) {
 	return common.LoadDefaultPatterns()
 }
 
-func loadPatternsFromFileCmd(filename string) ([]*parser.Pattern, error) {
+func loadPatternsFromFileCmd(filename string) ([]*common.Pattern, error) {
 	return common.LoadPatternsFromFile(filename)
 }
 
@@ -151,7 +150,7 @@ func validatePatternFile(filename string) (bool, error) {
 	return valid, nil
 }
 
-func validatePattern(pattern *parser.Pattern, index int) error {
+func validatePattern(pattern *common.Pattern, index int) error {
 	if pattern.ID == "" {
 		return fmt.Errorf("missing required field: id")
 	}
@@ -165,11 +164,11 @@ func validatePattern(pattern *parser.Pattern, index int) error {
 	}
 
 	// Validate pattern type
-	validTypes := map[parser.PatternType]bool{
-		parser.PatternTypeError:       true,
-		parser.PatternTypeAnomaly:     true,
-		parser.PatternTypePerformance: true,
-		parser.PatternTypeSecurity:    true,
+	validTypes := map[common.PatternType]bool{
+		common.PatternTypeError:       true,
+		common.PatternTypeAnomaly:     true,
+		common.PatternTypePerformance: true,
+		common.PatternTypeSecurity:    true,
 	}
 
 	if !validTypes[pattern.Type] {

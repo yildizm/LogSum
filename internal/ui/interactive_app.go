@@ -9,8 +9,8 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/yildizm/LogSum/internal/analyzer"
+	"github.com/yildizm/LogSum/internal/common"
 	"github.com/yildizm/LogSum/internal/emoji"
-	"github.com/yildizm/LogSum/internal/parser"
 )
 
 // Message types for the interactive app
@@ -34,8 +34,8 @@ const (
 type InteractiveModel struct {
 	width     int
 	height    int
-	entries   []*parser.LogEntry
-	patterns  []*parser.Pattern
+	entries   []*common.LogEntry
+	patterns  []*common.Pattern
 	analysis  *analyzer.Analysis
 	analyzing bool
 	ready     bool
@@ -61,7 +61,7 @@ type InteractiveModel struct {
 }
 
 // NewInteractiveModel creates a new interactive model
-func NewInteractiveModel(entries []*parser.LogEntry, patterns []*parser.Pattern) *InteractiveModel {
+func NewInteractiveModel(entries []*common.LogEntry, patterns []*common.Pattern) *InteractiveModel {
 	return &InteractiveModel{
 		entries:        entries,
 		patterns:       patterns,
@@ -471,10 +471,10 @@ func (m *InteractiveModel) renderLogsView() string {
 		Render(emoji.GetEmoji("recommendations") + " Recent Log Entries")
 
 	// Show recent error/warning entries first
-	var relevantEntries []*parser.LogEntry
+	var relevantEntries []*common.LogEntry
 	for i := len(m.entries) - 1; i >= 0 && len(relevantEntries) < 20; i-- {
 		entry := m.entries[i]
-		if entry.Level >= parser.LevelWarn {
+		if entry.LogLevel >= common.LevelWarn {
 			relevantEntries = append(relevantEntries, entry)
 		}
 	}
@@ -503,7 +503,7 @@ func (m *InteractiveModel) renderLogsView() string {
 			prefix = "▶ "
 			style = style.Background(m.selectedColor).Foreground(m.primaryColor).Bold(true)
 		} else {
-			style = style.Foreground(m.getLogLevelColor(entry.Level))
+			style = style.Foreground(m.getLogLevelColor(entry.LogLevel))
 		}
 
 		timestamp := ""
@@ -516,7 +516,7 @@ func (m *InteractiveModel) renderLogsView() string {
 			message = message[:77] + "..."
 		}
 
-		text := fmt.Sprintf("%s%s[%s] %s", prefix, timestamp, entry.Level, message)
+		text := fmt.Sprintf("%s%s[%s] %s", prefix, timestamp, entry.LogLevel, message)
 		logList = append(logList, style.Render(text))
 	}
 
@@ -614,41 +614,41 @@ func (m *InteractiveModel) renderHelpView() string {
 }
 
 // Helper functions (same as before)
-func (m *InteractiveModel) getPatternColor(patternType parser.PatternType) lipgloss.AdaptiveColor {
+func (m *InteractiveModel) getPatternColor(patternType common.PatternType) lipgloss.AdaptiveColor {
 	switch patternType {
-	case parser.PatternTypeError:
+	case common.PatternTypeError:
 		return m.errorColor
-	case parser.PatternTypeAnomaly:
+	case common.PatternTypeAnomaly:
 		return m.warningColor
-	case parser.PatternTypePerformance:
+	case common.PatternTypePerformance:
 		return lipgloss.AdaptiveColor{Light: "#F97316", Dark: "#FB923C"}
-	case parser.PatternTypeSecurity:
+	case common.PatternTypeSecurity:
 		return lipgloss.AdaptiveColor{Light: "#DC2626", Dark: "#EF4444"}
 	default:
 		return m.primaryColor
 	}
 }
 
-func (m *InteractiveModel) getSeverityColor(severity parser.LogLevel) lipgloss.AdaptiveColor {
+func (m *InteractiveModel) getSeverityColor(severity common.LogLevel) lipgloss.AdaptiveColor {
 	switch severity {
-	case parser.LevelError:
+	case common.LevelError:
 		return m.errorColor
-	case parser.LevelWarn:
+	case common.LevelWarn:
 		return m.warningColor
-	case parser.LevelInfo:
+	case common.LevelInfo:
 		return m.primaryColor
 	default:
 		return m.secondaryColor
 	}
 }
 
-func (m *InteractiveModel) getLogLevelColor(level parser.LogLevel) lipgloss.AdaptiveColor {
+func (m *InteractiveModel) getLogLevelColor(level common.LogLevel) lipgloss.AdaptiveColor {
 	switch level {
-	case parser.LevelError:
+	case common.LevelError:
 		return m.errorColor
-	case parser.LevelWarn:
+	case common.LevelWarn:
 		return m.warningColor
-	case parser.LevelInfo:
+	case common.LevelInfo:
 		return m.primaryColor
 	default:
 		return m.secondaryColor
@@ -844,7 +844,7 @@ func (m *InteractiveModel) handleAnalysisProgress(msg analysisProgressMsg) (tea.
 }
 
 // InteractiveRun runs the fully interactive TUI
-func InteractiveRun(entries []*parser.LogEntry, patterns []*parser.Pattern) error {
+func InteractiveRun(entries []*common.LogEntry, patterns []*common.Pattern) error {
 	model := NewInteractiveModel(entries, patterns)
 	p := tea.NewProgram(model, tea.WithAltScreen())
 	_, err := p.Run()

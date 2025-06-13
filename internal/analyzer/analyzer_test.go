@@ -5,19 +5,20 @@ import (
 	"testing"
 	"time"
 
-	"github.com/yildizm/LogSum/internal/parser"
+	"github.com/yildizm/LogSum/internal/common"
+	"github.com/yildizm/go-logparser"
 )
 
 func TestAnalyzerEngine(t *testing.T) {
 	engine := NewEngine()
 
 	// Test pattern
-	pattern := &parser.Pattern{
+	pattern := &common.Pattern{
 		ID:       "test_error",
 		Name:     "Test Error",
-		Type:     parser.PatternTypeError,
+		Type:     common.PatternTypeError,
 		Keywords: []string{"error", "failed"},
-		Severity: parser.LevelError,
+		Severity: common.LevelError,
 	}
 
 	err := engine.AddPattern(pattern)
@@ -26,22 +27,10 @@ func TestAnalyzerEngine(t *testing.T) {
 	}
 
 	// Test entries
-	entries := []*parser.LogEntry{
-		{
-			Timestamp: time.Now(),
-			Level:     parser.LevelInfo,
-			Message:   "Application started",
-		},
-		{
-			Timestamp: time.Now().Add(time.Minute),
-			Level:     parser.LevelError,
-			Message:   "Database connection failed",
-		},
-		{
-			Timestamp: time.Now().Add(2 * time.Minute),
-			Level:     parser.LevelError,
-			Message:   "Authentication error occurred",
-		},
+	entries := []*common.LogEntry{
+		createTestEntry(time.Now(), common.LevelInfo, "INFO", "Application started"),
+		createTestEntry(time.Now().Add(time.Minute), common.LevelError, "ERROR", "Database connection failed"),
+		createTestEntry(time.Now().Add(2*time.Minute), common.LevelError, "ERROR", "Authentication error occurred"),
 	}
 
 	ctx := context.Background()
@@ -68,34 +57,34 @@ func TestPatternMatcher(t *testing.T) {
 	matcher := NewPatternMatcher()
 
 	// Test regex pattern
-	regexPattern := &parser.Pattern{
+	regexPattern := &common.Pattern{
 		ID:    "regex_test",
 		Name:  "Regex Test",
-		Type:  parser.PatternTypeError,
+		Type:  common.PatternTypeError,
 		Regex: "database.*failed",
 	}
 
 	// Test keyword pattern
-	keywordPattern := &parser.Pattern{
+	keywordPattern := &common.Pattern{
 		ID:       "keyword_test",
 		Name:     "Keyword Test",
-		Type:     parser.PatternTypeError,
+		Type:     common.PatternTypeError,
 		Keywords: []string{"timeout", "connection"},
 	}
 
-	err := matcher.SetPatterns([]*parser.Pattern{regexPattern, keywordPattern})
+	err := matcher.SetPatterns([]*common.Pattern{regexPattern, keywordPattern})
 	if err != nil {
 		t.Fatalf("Failed to set patterns: %v", err)
 	}
 
-	entries := []*parser.LogEntry{
-		{Message: "Database connection failed"},
-		{Message: "Connection timeout occurred"},
-		{Message: "Normal operation"},
+	entries := []*common.LogEntry{
+		createTestEntry(time.Now(), common.LevelInfo, "INFO", "Database connection failed"),
+		createTestEntry(time.Now(), common.LevelInfo, "INFO", "Connection timeout occurred"),
+		createTestEntry(time.Now(), common.LevelInfo, "INFO", "Normal operation"),
 	}
 
 	ctx := context.Background()
-	matches, err := matcher.MatchPatterns(ctx, []*parser.Pattern{regexPattern, keywordPattern}, entries)
+	matches, err := matcher.MatchPatterns(ctx, []*common.Pattern{regexPattern, keywordPattern}, entries)
 	if err != nil {
 		t.Fatalf("Pattern matching failed: %v", err)
 	}
@@ -129,24 +118,20 @@ func TestInsightGenerator(t *testing.T) {
 
 	// Create entries with error spike pattern
 	baseTime := time.Now()
-	var entries []*parser.LogEntry
+	var entries []*common.LogEntry
 
 	// Normal period
 	for i := 0; i < 10; i++ {
-		entries = append(entries, &parser.LogEntry{
-			Timestamp: baseTime.Add(time.Duration(i) * time.Minute),
-			Level:     parser.LevelInfo,
-			Message:   "Normal operation",
-		})
+		entries = append(entries, createTestEntry(
+			baseTime.Add(time.Duration(i)*time.Minute),
+			common.LevelInfo, "INFO", "Normal operation"))
 	}
 
 	// Error spike period
 	for i := 10; i < 20; i++ {
-		entries = append(entries, &parser.LogEntry{
-			Timestamp: baseTime.Add(time.Duration(i) * time.Minute),
-			Level:     parser.LevelError,
-			Message:   "Error occurred",
-		})
+		entries = append(entries, createTestEntry(
+			baseTime.Add(time.Duration(i)*time.Minute),
+			common.LevelError, "ERROR", "Error occurred"))
 	}
 
 	matches := []PatternMatch{} // Empty for this test
@@ -174,22 +159,10 @@ func TestTimelineGenerator(t *testing.T) {
 	gen := NewTimelineGenerator()
 
 	baseTime := time.Now()
-	entries := []*parser.LogEntry{
-		{
-			Timestamp: baseTime,
-			Level:     parser.LevelInfo,
-			Message:   "First entry",
-		},
-		{
-			Timestamp: baseTime.Add(3 * time.Minute),
-			Level:     parser.LevelError,
-			Message:   "Error entry",
-		},
-		{
-			Timestamp: baseTime.Add(7 * time.Minute),
-			Level:     parser.LevelWarn,
-			Message:   "Warning entry",
-		},
+	entries := []*common.LogEntry{
+		createTestEntry(baseTime, common.LevelInfo, "INFO", "First entry"),
+		createTestEntry(baseTime.Add(3*time.Minute), common.LevelError, "ERROR", "Error entry"),
+		createTestEntry(baseTime.Add(7*time.Minute), common.LevelWarn, "WARN", "Warning entry"),
 	}
 
 	timeline := gen.GenerateTimeline(entries, 5*time.Minute)
@@ -230,17 +203,17 @@ func benchmarkPatternMatching(b *testing.B, entryCount int) {
 	matcher := NewPatternMatcher()
 
 	// Setup patterns
-	patterns := []*parser.Pattern{
+	patterns := []*common.Pattern{
 		{
 			ID:       "error_pattern",
 			Name:     "Error Pattern",
-			Type:     parser.PatternTypeError,
+			Type:     common.PatternTypeError,
 			Keywords: []string{"error", "failed", "exception"},
 		},
 		{
 			ID:    "timeout_pattern",
 			Name:  "Timeout Pattern",
-			Type:  parser.PatternTypeError,
+			Type:  common.PatternTypeError,
 			Regex: "timeout|timed out",
 		},
 	}
@@ -251,7 +224,7 @@ func benchmarkPatternMatching(b *testing.B, entryCount int) {
 	}
 
 	// Generate test entries
-	entries := make([]*parser.LogEntry, entryCount)
+	entries := make([]*common.LogEntry, entryCount)
 	messages := []string{
 		"Normal operation",
 		"Database error occurred",
@@ -263,11 +236,9 @@ func benchmarkPatternMatching(b *testing.B, entryCount int) {
 	}
 
 	for i := 0; i < entryCount; i++ {
-		entries[i] = &parser.LogEntry{
-			Timestamp: time.Now().Add(time.Duration(i) * time.Second),
-			Level:     parser.LevelInfo,
-			Message:   messages[i%len(messages)],
-		}
+		entries[i] = createTestEntry(
+			time.Now().Add(time.Duration(i)*time.Second),
+			common.LevelInfo, "INFO", messages[i%len(messages)])
 	}
 
 	b.ResetTimer()
@@ -285,17 +256,17 @@ func BenchmarkFullAnalysis(b *testing.B) {
 	engine := NewEngine()
 
 	// Setup patterns
-	patterns := []*parser.Pattern{
+	patterns := []*common.Pattern{
 		{
 			ID:       "error_pattern",
 			Name:     "Error Pattern",
-			Type:     parser.PatternTypeError,
+			Type:     common.PatternTypeError,
 			Keywords: []string{"error", "failed"},
 		},
 		{
 			ID:       "perf_pattern",
 			Name:     "Performance Pattern",
-			Type:     parser.PatternTypePerformance,
+			Type:     common.PatternTypePerformance,
 			Keywords: []string{"slow", "timeout"},
 		},
 	}
@@ -307,26 +278,27 @@ func BenchmarkFullAnalysis(b *testing.B) {
 
 	// Generate test entries
 	entryCount := 10000
-	entries := make([]*parser.LogEntry, entryCount)
+	entries := make([]*common.LogEntry, entryCount)
 
 	for i := 0; i < entryCount; i++ {
-		level := parser.LevelInfo
+		level := common.LevelInfo
+		levelStr := "INFO"
 		message := "Normal operation"
 
 		// Add some errors and performance issues
 		if i%100 == 0 {
-			level = parser.LevelError
+			level = common.LevelError
+			levelStr = "ERROR"
 			message = "Database error occurred"
 		} else if i%200 == 0 {
-			level = parser.LevelWarn
+			level = common.LevelWarn
+			levelStr = "WARN"
 			message = "Slow query detected"
 		}
 
-		entries[i] = &parser.LogEntry{
-			Timestamp: time.Now().Add(time.Duration(i) * time.Second),
-			Level:     level,
-			Message:   message,
-		}
+		entries[i] = createTestEntry(
+			time.Now().Add(time.Duration(i)*time.Second),
+			level, levelStr, message)
 	}
 
 	b.ResetTimer()
@@ -341,25 +313,37 @@ func BenchmarkFullAnalysis(b *testing.B) {
 }
 
 // Test helper functions
-func createTestEntries(count int, errorRatio float64) []*parser.LogEntry {
-	entries := make([]*parser.LogEntry, count)
+func createTestEntry(timestamp time.Time, level common.LogLevel, levelStr, message string) *common.LogEntry {
+	return &common.LogEntry{
+		LogEntry: logparser.LogEntry{
+			Timestamp: timestamp,
+			Level:     levelStr,
+			Message:   message,
+		},
+		LogLevel: level,
+	}
+}
+
+func createTestEntries(count int, errorRatio float64) []*common.LogEntry {
+	entries := make([]*common.LogEntry, count)
 	baseTime := time.Now()
 
 	for i := 0; i < count; i++ {
-		level := parser.LevelInfo
+		level := common.LevelInfo
+		levelStr := "INFO"
 		message := "Normal operation"
 
 		if float64(i)/float64(count) < errorRatio {
-			level = parser.LevelError
+			level = common.LevelError
+			levelStr = "ERROR"
 			message = "Error occurred"
 		}
 
-		entries[i] = &parser.LogEntry{
-			Timestamp: baseTime.Add(time.Duration(i) * time.Second),
-			Level:     level,
-			Message:   message,
-			Service:   "test-service",
-		}
+		entry := createTestEntry(
+			baseTime.Add(time.Duration(i)*time.Second),
+			level, levelStr, message)
+		entry.Service = "test-service"
+		entries[i] = entry
 	}
 
 	return entries
@@ -369,10 +353,10 @@ func TestPerformanceRequirement(t *testing.T) {
 	// Test that 10K entries can be processed in < 500ms (allowing for CI environment)
 	engine := NewEngine()
 
-	pattern := &parser.Pattern{
+	pattern := &common.Pattern{
 		ID:       "test_pattern",
 		Name:     "Test Pattern",
-		Type:     parser.PatternTypeError,
+		Type:     common.PatternTypeError,
 		Keywords: []string{"error"},
 	}
 

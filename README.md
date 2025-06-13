@@ -1,8 +1,15 @@
 # LogSum - High-Performance Log Analysis Tool 🚀
 
+[![Go Reference](https://pkg.go.dev/badge/github.com/yildizm/LogSum.svg)](https://pkg.go.dev/github.com/yildizm/LogSum)
+[![CI](https://github.com/yildizm/LogSum/workflows/CI/badge.svg)](https://github.com/yildizm/LogSum/actions)
+[![Go Report Card](https://goreportcard.com/badge/github.com/yildizm/LogSum)](https://goreportcard.com/report/github.com/yildizm/LogSum)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+
 Fast log analysis with terminal UI.
 
 LogSum finds patterns and errors in your logs. It supports JSON, logfmt, and plain text formats.
+
+Check out [the blog post]([/guides/content/editing-an-existing-page](https://dev.to/yildizmust4f4/building-logsum-a-33ms-log-analyzer-with-a-beautiful-terminal-ui-13ea)) for the details.
 
 ## Features
 

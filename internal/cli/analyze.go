@@ -13,8 +13,8 @@ import (
 	"github.com/spf13/cobra"
 	"github.com/yildizm/LogSum/internal/analyzer"
 	"github.com/yildizm/LogSum/internal/common"
-	"github.com/yildizm/LogSum/internal/parser"
 	"github.com/yildizm/LogSum/internal/ui"
+	"github.com/yildizm/go-logparser"
 )
 
 var (
@@ -104,7 +104,7 @@ func readLines(reader io.Reader, maxLines int) ([]string, error) {
 }
 
 // loadPatternsFromPath loads patterns from a file or directory
-func loadPatternsFromPath(path string) ([]*parser.Pattern, error) {
+func loadPatternsFromPath(path string) ([]*common.Pattern, error) {
 	info, err := os.Stat(path)
 	if err != nil {
 		return nil, fmt.Errorf("path does not exist: %w", err)
@@ -117,8 +117,8 @@ func loadPatternsFromPath(path string) ([]*parser.Pattern, error) {
 }
 
 // loadPatternsFromDirectory loads all pattern files from a directory
-func loadPatternsFromDirectory(directory string) ([]*parser.Pattern, error) {
-	var patterns []*parser.Pattern
+func loadPatternsFromDirectory(directory string) ([]*common.Pattern, error) {
+	var patterns []*common.Pattern
 
 	err := filepath.Walk(directory, func(path string, info os.FileInfo, err error) error {
 		if err != nil {
@@ -140,7 +140,7 @@ func loadPatternsFromDirectory(directory string) ([]*parser.Pattern, error) {
 }
 
 // loadPatternsFromFile loads patterns from a single YAML file
-func loadPatternsFromFile(filename string) ([]*parser.Pattern, error) {
+func loadPatternsFromFile(filename string) ([]*common.Pattern, error) {
 	return common.LoadPatternsFromFile(filename)
 }
 
@@ -185,7 +185,7 @@ func setupInputReader(args []string) (reader io.Reader, source string, cleanup f
 }
 
 // readAndParseInput reads and parses log entries from the input reader
-func readAndParseInput(reader io.Reader) ([]*parser.LogEntry, error) {
+func readAndParseInput(reader io.Reader) ([]*common.LogEntry, error) {
 	// Read all lines
 	lines, err := readLines(reader, analyzeMaxLines)
 	if err != nil {
@@ -201,12 +201,19 @@ func readAndParseInput(reader io.Reader) ([]*parser.LogEntry, error) {
 	}
 
 	// Parse logs
-	var entries []*parser.LogEntry
+	var entries []*common.LogEntry
 	if analyzeFormat == "auto" {
 		if isVerbose() {
 			fmt.Fprintf(os.Stderr, "Auto-detecting format...\n")
 		}
-		entries, err = parser.ParseAuto(lines)
+		p := logparser.New()
+		logEntries, err := p.ParseString(strings.Join(lines, "\n"))
+		if err == nil {
+			entries = make([]*common.LogEntry, len(logEntries))
+			for i, entry := range logEntries {
+				entries[i] = common.ConvertToCommonLogEntry(&entry, i+1)
+			}
+		}
 	} else {
 		entries, err = parseWithSpecificFormat(lines)
 	}
@@ -227,31 +234,36 @@ func readAndParseInput(reader io.Reader) ([]*parser.LogEntry, error) {
 }
 
 // parseWithSpecificFormat parses lines with a specific format
-func parseWithSpecificFormat(lines []string) ([]*parser.LogEntry, error) {
-	p, err := parser.DefaultFactory.CreateParser(analyzeFormat)
-	if err != nil {
+func parseWithSpecificFormat(lines []string) ([]*common.LogEntry, error) {
+	var format logparser.Format
+	switch analyzeFormat {
+	case "json":
+		format = logparser.FormatJSON
+	case "logfmt":
+		format = logparser.FormatLogfmt
+	case "text":
+		format = logparser.FormatText
+	default:
 		return nil, fmt.Errorf("unknown format %s. Available formats: json, logfmt, text", analyzeFormat)
 	}
 
-	entries := make([]*parser.LogEntry, 0, len(lines))
-	for i, line := range lines {
-		entry, parseErr := p.Parse(line)
-		if parseErr != nil {
-			if isVerbose() {
-				fmt.Fprintf(os.Stderr, "Failed to parse line %d: %v\n", i+1, parseErr)
-			}
-			continue
-		}
-		entry.LineNumber = i + 1
-		entries = append(entries, entry)
+	p := logparser.NewWithFormat(format)
+	logEntries, err := p.ParseString(strings.Join(lines, "\n"))
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse logs: %w", err)
+	}
+
+	entries := make([]*common.LogEntry, len(logEntries))
+	for i, entry := range logEntries {
+		entries[i] = common.ConvertToCommonLogEntry(&entry, i+1)
 	}
 
 	return entries, nil
 }
 
 // loadAnalysisPatterns loads patterns based on configuration
-func loadAnalysisPatterns() []*parser.Pattern {
-	var patterns []*parser.Pattern
+func loadAnalysisPatterns() []*common.Pattern {
+	var patterns []*common.Pattern
 
 	if analyzePatterns != "" {
 		loadedPatterns, err := loadPatternsFromPath(analyzePatterns)
@@ -284,7 +296,7 @@ func loadAnalysisPatterns() []*parser.Pattern {
 }
 
 // runAnalysisAndOutput performs analysis and outputs results
-func runAnalysisAndOutput(ctx context.Context, entries []*parser.LogEntry, patterns []*parser.Pattern) error {
+func runAnalysisAndOutput(ctx context.Context, entries []*common.LogEntry, patterns []*common.Pattern) error {
 	// Determine if we should use TUI
 	shouldUseTUI := !analyzeNoTUI && getOutputFormat() == "text" && !isVerbose()
 

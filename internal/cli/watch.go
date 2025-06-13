@@ -13,7 +13,8 @@ import (
 
 	"github.com/fsnotify/fsnotify"
 	"github.com/spf13/cobra"
-	"github.com/yildizm/LogSum/internal/parser"
+	"github.com/yildizm/LogSum/internal/common"
+	"github.com/yildizm/go-logparser"
 )
 
 var (
@@ -55,7 +56,7 @@ func runWatch(cmd *cobra.Command, args []string) error {
 	return runWatchLoop(watcher, file)
 }
 
-func processNewLines(file *os.File, detectedParser parser.Parser) (parser.Parser, error) {
+func processNewLines(file *os.File, detectedParser logparser.Parser) (logparser.Parser, error) {
 	scanner := bufio.NewScanner(file)
 
 	var newLines []string
@@ -76,36 +77,29 @@ func processNewLines(file *os.File, detectedParser parser.Parser) (parser.Parser
 
 	// Auto-detect parser on first lines if not already detected
 	if detectedParser == nil {
-		format, err := parser.DefaultFactory.DetectFormat(newLines[:min(len(newLines), 5)])
-		if err != nil {
-			return detectedParser, fmt.Errorf("failed to detect format: %w", err)
-		}
-
-		p, err := parser.DefaultFactory.CreateParser(format)
-		if err != nil {
-			return detectedParser, fmt.Errorf("failed to create parser: %w", err)
-		}
-
-		detectedParser = p
+		detectedParser = logparser.New()
 		if isVerbose() {
-			fmt.Fprintf(os.Stderr, "Detected format: %s\n", format)
+			fmt.Fprintf(os.Stderr, "Created auto-detecting parser\n")
 		}
 	}
 
-	// Process new lines
-	for _, line := range newLines {
-		entry, err := detectedParser.Parse(line)
+	// Process new lines in batch
+	if len(newLines) > 0 {
+		entries, err := detectedParser.ParseString(strings.Join(newLines, "\n"))
 		if err != nil {
 			if isVerbose() {
-				fmt.Fprintf(os.Stderr, "Failed to parse line: %v\n", err)
+				fmt.Fprintf(os.Stderr, "Failed to parse lines: %v\n", err)
 			}
-			continue
+			return detectedParser, nil
 		}
 
 		// Simple real-time output - just show important entries
-		if entry.Level >= parser.LevelWarn {
-			timestamp := entry.Timestamp.Format("15:04:05")
-			fmt.Printf("[%s] %s: %s\n", timestamp, entry.Level.String(), entry.Message)
+		for i, entry := range entries {
+			commonEntry := common.ConvertToCommonLogEntry(&entry, i)
+			if commonEntry.LogLevel >= common.LevelWarn {
+				timestamp := entry.Timestamp.Format("15:04:05")
+				fmt.Printf("[%s] %s: %s\n", timestamp, commonEntry.LogLevel.String(), entry.Message)
+			}
 		}
 	}
 
@@ -205,7 +199,7 @@ func runWatchLoop(watcher *fsnotify.Watcher, file *os.File) error {
 	signal.Notify(signals, syscall.SIGINT, syscall.SIGTERM)
 
 	// Create parser for auto-detection
-	var detectedParser parser.Parser
+	var detectedParser logparser.Parser
 
 	// Watch loop
 	for {
@@ -244,7 +238,7 @@ func runWatchLoop(watcher *fsnotify.Watcher, file *os.File) error {
 }
 
 // handleWatchEvent processes file system events
-func handleWatchEvent(event fsnotify.Event, file *os.File, detectedParser parser.Parser) (parser.Parser, error) {
+func handleWatchEvent(event fsnotify.Event, file *os.File, detectedParser logparser.Parser) (logparser.Parser, error) {
 	// Only process write events
 	if event.Op&fsnotify.Write == fsnotify.Write {
 		updatedParser, err := processNewLines(file, detectedParser)

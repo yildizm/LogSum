@@ -1,8 +1,8 @@
 package cli
 
 import (
+	"github.com/yildizm/LogSum/internal/common"
 	"github.com/yildizm/LogSum/internal/emoji"
-	"github.com/yildizm/LogSum/internal/parser"
 )
 
 // GetEmoji is a wrapper for the shared emoji package
@@ -11,15 +11,15 @@ func GetEmoji(key string) string {
 }
 
 // GetPatternEmoji returns emoji for pattern types with fallback support
-func GetPatternEmoji(patternType parser.PatternType) string {
+func GetPatternEmoji(patternType common.PatternType) string {
 	switch patternType {
-	case parser.PatternTypeError:
+	case common.PatternTypeError:
 		return GetEmoji("error_pattern")
-	case parser.PatternTypeAnomaly:
+	case common.PatternTypeAnomaly:
 		return GetEmoji("anomaly_pattern")
-	case parser.PatternTypePerformance:
+	case common.PatternTypePerformance:
 		return GetEmoji("perf_pattern")
-	case parser.PatternTypeSecurity:
+	case common.PatternTypeSecurity:
 		return GetEmoji("security_pattern")
 	default:
 		return GetEmoji("pattern")
@@ -27,13 +27,13 @@ func GetPatternEmoji(patternType parser.PatternType) string {
 }
 
 // GetSeverityEmoji returns emoji for severity levels with fallback support
-func GetSeverityEmoji(severity parser.LogLevel) string {
+func GetSeverityEmoji(severity common.LogLevel) string {
 	switch severity {
-	case parser.LevelFatal, parser.LevelError:
+	case common.LevelFatal, common.LevelError:
 		return GetEmoji("error")
-	case parser.LevelWarn:
+	case common.LevelWarn:
 		return GetEmoji("warning")
-	case parser.LevelInfo:
+	case common.LevelInfo:
 		return GetEmoji("info")
 	default:
 		return GetEmoji("insight")

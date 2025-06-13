@@ -7,7 +7,7 @@ import (
 
 	"github.com/charmbracelet/lipgloss"
 	"github.com/yildizm/LogSum/internal/analyzer"
-	"github.com/yildizm/LogSum/internal/parser"
+	"github.com/yildizm/LogSum/internal/common"
 )
 
 // StatsCard represents a statistics card component
@@ -221,10 +221,10 @@ func CreateAnalysisStats(analysis *analyzer.Analysis) *StatsDashboard {
 	if len(analysis.Insights) > 0 {
 		// Check for high-severity insights
 		for _, insight := range analysis.Insights {
-			if insight.Severity >= parser.LevelError {
+			if insight.Severity >= common.LevelError {
 				insightStatus = "error"
 				break
-			} else if insight.Severity >= parser.LevelWarn {
+			} else if insight.Severity >= common.LevelWarn {
 				insightStatus = "warning"
 			}
 		}

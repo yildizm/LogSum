@@ -5,12 +5,12 @@ import (
 	"sort"
 	"time"
 
-	"github.com/yildizm/LogSum/internal/parser"
+	"github.com/yildizm/LogSum/internal/common"
 )
 
 // AnalyzerEngine implements the Analyzer and Engine interfaces
 type AnalyzerEngine struct {
-	patterns           []*parser.Pattern
+	patterns           []*common.Pattern
 	matcher            *PatternMatcher
 	insightGen         *InsightGenerator
 	timelineGen        *TimelineGenerator
@@ -20,7 +20,7 @@ type AnalyzerEngine struct {
 
 func NewEngine() *AnalyzerEngine {
 	return &AnalyzerEngine{
-		patterns:           []*parser.Pattern{},
+		patterns:           []*common.Pattern{},
 		matcher:            NewPatternMatcher(),
 		insightGen:         NewInsightGenerator(),
 		timelineGen:        NewTimelineGenerator(),
@@ -30,7 +30,7 @@ func NewEngine() *AnalyzerEngine {
 }
 
 // Analyze performs comprehensive analysis on log entries
-func (e *AnalyzerEngine) Analyze(ctx context.Context, entries []*parser.LogEntry) (*Analysis, error) {
+func (e *AnalyzerEngine) Analyze(ctx context.Context, entries []*common.LogEntry) (*Analysis, error) {
 	if len(entries) == 0 {
 		return &Analysis{
 			Patterns: []PatternMatch{},
@@ -46,7 +46,7 @@ func (e *AnalyzerEngine) Analyze(ctx context.Context, entries []*parser.LogEntry
 	}
 
 	// Sort entries by timestamp for timeline analysis
-	sortedEntries := make([]*parser.LogEntry, len(entries))
+	sortedEntries := make([]*common.LogEntry, len(entries))
 	copy(sortedEntries, entries)
 	sort.Slice(sortedEntries, func(i, j int) bool {
 		return sortedEntries[i].Timestamp.Before(sortedEntries[j].Timestamp)
@@ -104,13 +104,13 @@ func (e *AnalyzerEngine) Analyze(ctx context.Context, entries []*parser.LogEntry
 }
 
 // AddPattern adds a single pattern to the analyzer
-func (e *AnalyzerEngine) AddPattern(pattern *parser.Pattern) error {
+func (e *AnalyzerEngine) AddPattern(pattern *common.Pattern) error {
 	e.patterns = append(e.patterns, pattern)
 	return e.matcher.AddPattern(pattern)
 }
 
 // SetPatterns sets all patterns for the analyzer
-func (e *AnalyzerEngine) SetPatterns(patterns []*parser.Pattern) error {
+func (e *AnalyzerEngine) SetPatterns(patterns []*common.Pattern) error {
 	e.patterns = patterns
 	return e.matcher.SetPatterns(patterns)
 }
@@ -141,7 +141,7 @@ func (e *AnalyzerEngine) DisableInsights() Engine {
 }
 
 // calculateBasicStats calculates basic statistics from log entries
-func (e *AnalyzerEngine) calculateBasicStats(analysis *Analysis, entries []*parser.LogEntry) {
+func (e *AnalyzerEngine) calculateBasicStats(analysis *Analysis, entries []*common.LogEntry) {
 	if len(entries) == 0 {
 		return
 	}
@@ -152,17 +152,17 @@ func (e *AnalyzerEngine) calculateBasicStats(analysis *Analysis, entries []*pars
 
 	// Count by severity level
 	for _, entry := range entries {
-		switch entry.Level {
-		case parser.LevelError, parser.LevelFatal:
+		switch entry.LogLevel {
+		case common.LevelError, common.LevelFatal:
 			analysis.ErrorCount++
-		case parser.LevelWarn:
+		case common.LevelWarn:
 			analysis.WarnCount++
 		}
 	}
 }
 
 // GetPatterns returns the current patterns
-func (e *AnalyzerEngine) GetPatterns() []*parser.Pattern {
+func (e *AnalyzerEngine) GetPatterns() []*common.Pattern {
 	return e.patterns
 }
 
@@ -174,22 +174,22 @@ func (e *AnalyzerEngine) SetTimelineBucketSize(size time.Duration) {
 // updateCountsFromPatterns updates error/warning counts based on pattern matches
 func (e *AnalyzerEngine) updateCountsFromPatterns(analysis *Analysis, matches []PatternMatch) {
 	// Track unique entries to avoid double counting
-	errorEntries := make(map[*parser.LogEntry]bool)
-	warningEntries := make(map[*parser.LogEntry]bool)
+	errorEntries := make(map[*common.LogEntry]bool)
+	warningEntries := make(map[*common.LogEntry]bool)
 
 	for _, match := range matches {
 		switch match.Pattern.Type {
-		case parser.PatternTypeError:
+		case common.PatternTypeError:
 			for _, entry := range match.Matches {
 				// Only count if not already counted as error by log level
-				if entry.Level != parser.LevelError && entry.Level != parser.LevelFatal {
+				if entry.LogLevel != common.LevelError && entry.LogLevel != common.LevelFatal {
 					errorEntries[entry] = true
 				}
 			}
-		case parser.PatternTypeAnomaly, parser.PatternTypePerformance:
+		case common.PatternTypeAnomaly, common.PatternTypePerformance:
 			for _, entry := range match.Matches {
 				// Count anomalies and performance issues as warnings if not already counted
-				if entry.Level != parser.LevelError && entry.Level != parser.LevelFatal && entry.Level != parser.LevelWarn {
+				if entry.LogLevel != common.LevelError && entry.LogLevel != common.LevelFatal && entry.LogLevel != common.LevelWarn {
 					warningEntries[entry] = true
 				}
 			}

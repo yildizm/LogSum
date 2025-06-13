@@ -8,7 +8,7 @@ import (
 	"time"
 
 	"github.com/yildizm/LogSum/internal/analyzer"
-	"github.com/yildizm/LogSum/internal/parser"
+	"github.com/yildizm/LogSum/internal/common"
 )
 
 // OutputFormatter defines the interface for output formatting
@@ -43,11 +43,11 @@ type TimeRange struct {
 
 // PatternOutput represents enhanced pattern match output
 type PatternOutput struct {
-	Pattern       *parser.Pattern    `json:"pattern"`
+	Pattern       *common.Pattern    `json:"pattern"`
 	Matches       int                `json:"matches"`
 	FirstSeen     time.Time          `json:"first_seen,omitempty"`
 	LastSeen      time.Time          `json:"last_seen,omitempty"`
-	SampleEntries []*parser.LogEntry `json:"sample_entries,omitempty"`
+	SampleEntries []*common.LogEntry `json:"sample_entries,omitempty"`
 }
 
 // InsightOutput represents enhanced insight output
@@ -470,12 +470,12 @@ func addCommas(s string) string {
 }
 
 // getPatternEmoji returns emoji for pattern types (deprecated, use GetPatternEmoji)
-func getPatternEmoji(patternType parser.PatternType) string {
+func getPatternEmoji(patternType common.PatternType) string {
 	return GetPatternEmoji(patternType)
 }
 
 // getSeverityEmoji returns emoji for severity levels (deprecated, use GetSeverityEmoji)
-func getSeverityEmoji(severity parser.LogLevel) string {
+func getSeverityEmoji(severity common.LogLevel) string {
 	return GetSeverityEmoji(severity)
 }
 
@@ -497,17 +497,17 @@ func generateRecommendations(analysis *analyzer.Analysis) []string {
 	// Pattern-based recommendations
 	for _, match := range analysis.Patterns {
 		switch match.Pattern.Type {
-		case parser.PatternTypeError:
+		case common.PatternTypeError:
 			if match.Count > 5 {
 				recommendations = append(recommendations,
 					fmt.Sprintf("Address recurring %s pattern (%d occurrences)",
 						match.Pattern.Name, match.Count))
 			}
-		case parser.PatternTypePerformance:
+		case common.PatternTypePerformance:
 			recommendations = append(recommendations,
 				fmt.Sprintf("Optimize performance issues related to %s",
 					match.Pattern.Name))
-		case parser.PatternTypeSecurity:
+		case common.PatternTypeSecurity:
 			recommendations = append(recommendations,
 				fmt.Sprintf("Review security concerns: %s (%d occurrences)",
 					match.Pattern.Name, match.Count))

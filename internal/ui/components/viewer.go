@@ -6,14 +6,14 @@ import (
 	"strings"
 
 	"github.com/charmbracelet/lipgloss"
-	"github.com/yildizm/LogSum/internal/parser"
+	"github.com/yildizm/LogSum/internal/common"
 	"github.com/yildizm/LogSum/internal/ui"
 )
 
 // LogViewer represents a log entry viewer component
 type LogViewer struct {
 	Title         string
-	Entries       []*parser.LogEntry
+	Entries       []*common.LogEntry
 	CurrentIndex  int
 	Width         int
 	Height        int
@@ -40,7 +40,7 @@ func NewLogViewer(title string, width, height int) *LogViewer {
 }
 
 // SetEntries sets the log entries to display
-func (v *LogViewer) SetEntries(entries []*parser.LogEntry) {
+func (v *LogViewer) SetEntries(entries []*common.LogEntry) {
 	v.Entries = entries
 	v.CurrentIndex = 0
 }
@@ -74,7 +74,7 @@ func (v *LogViewer) Previous() bool {
 }
 
 // GetCurrentEntry returns the current entry
-func (v *LogViewer) GetCurrentEntry() *parser.LogEntry {
+func (v *LogViewer) GetCurrentEntry() *common.LogEntry {
 	if v.CurrentIndex >= 0 && v.CurrentIndex < len(v.Entries) {
 		return v.Entries[v.CurrentIndex]
 	}
@@ -143,7 +143,7 @@ func (v *LogViewer) renderEntryWithContext() []string {
 }
 
 // renderLogEntry renders a single log entry
-func (v *LogViewer) renderLogEntry(entry *parser.LogEntry, highlight bool) string {
+func (v *LogViewer) renderLogEntry(entry *common.LogEntry, highlight bool) string {
 	styles := ui.GetStyles()
 
 	var parts []string
@@ -170,7 +170,7 @@ func (v *LogViewer) renderLogEntry(entry *parser.LogEntry, highlight bool) strin
 
 	// Level
 	if v.ShowLevel {
-		level := v.formatLevel(entry.Level)
+		level := v.formatLevel(entry.LogLevel)
 		if highlight {
 			parts = append(parts, styles.Selected.Render(level))
 		} else {
@@ -203,20 +203,20 @@ func (v *LogViewer) renderLogEntry(entry *parser.LogEntry, highlight bool) strin
 }
 
 // formatLevel formats and colors log levels
-func (v *LogViewer) formatLevel(level parser.LogLevel) string {
+func (v *LogViewer) formatLevel(level common.LogLevel) string {
 	styles := ui.GetStyles()
 
 	levelStr := strings.ToUpper(level.String())
 	levelStr = fmt.Sprintf("%-5s", levelStr) // Pad to 5 characters
 
 	switch level {
-	case parser.LevelError:
+	case common.LevelError:
 		return styles.Error.Render(levelStr)
-	case parser.LevelWarn:
+	case common.LevelWarn:
 		return styles.Warning.Render(levelStr)
-	case parser.LevelInfo:
+	case common.LevelInfo:
 		return styles.Info.Render(levelStr)
-	case parser.LevelDebug:
+	case common.LevelDebug:
 		return styles.Muted.Render(levelStr)
 	default:
 		return styles.Body.Render(levelStr)

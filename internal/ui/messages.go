@@ -1,16 +1,17 @@
 package ui
 
 import (
+	"context"
+
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/yildizm/LogSum/internal/analyzer"
 	"github.com/yildizm/LogSum/internal/common"
-	"github.com/yildizm/LogSum/internal/parser"
 )
 
 // Common message types shared across UI models
 type analysisCompleteMsg struct {
 	analysis *analyzer.Analysis
-	entries  []*parser.LogEntry
+	entries  []*common.LogEntry
 }
 
 type analysisErrorMsg struct {
@@ -18,15 +19,24 @@ type analysisErrorMsg struct {
 }
 
 // CreateAnalysisCommand creates a tea command that performs analysis
-func CreateAnalysisCommand(entries []*parser.LogEntry, patterns []*parser.Pattern) tea.Cmd {
+func CreateAnalysisCommand(entries []*common.LogEntry, patterns []*common.Pattern) tea.Cmd {
 	return func() tea.Msg {
-		result := common.PerformAnalysis(entries, patterns)
-		if result.Error != nil {
-			return analysisErrorMsg{err: result.Error}
+		engine := analyzer.NewEngine()
+		if len(patterns) > 0 {
+			if err := engine.SetPatterns(patterns); err != nil {
+				return analysisErrorMsg{err: err}
+			}
 		}
+
+		ctx := context.Background()
+		analysis, err := engine.Analyze(ctx, entries)
+		if err != nil {
+			return analysisErrorMsg{err: err}
+		}
+
 		return analysisCompleteMsg{
-			analysis: result.Analysis,
-			entries:  result.Entries,
+			analysis: analysis,
+			entries:  entries,
 		}
 	}
 }

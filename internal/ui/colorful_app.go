@@ -8,15 +8,15 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/yildizm/LogSum/internal/analyzer"
-	"github.com/yildizm/LogSum/internal/parser"
+	"github.com/yildizm/LogSum/internal/common"
 )
 
 // ColorfulModel represents an enhanced, colorful TUI model
 type ColorfulModel struct {
 	width     int
 	height    int
-	entries   []*parser.LogEntry
-	patterns  []*parser.Pattern
+	entries   []*common.LogEntry
+	patterns  []*common.Pattern
 	analysis  *analyzer.Analysis
 	analyzing bool
 	ready     bool
@@ -35,7 +35,7 @@ type ColorfulModel struct {
 }
 
 // NewColorfulModel creates a new colorful model
-func NewColorfulModel(entries []*parser.LogEntry, patterns []*parser.Pattern) *ColorfulModel {
+func NewColorfulModel(entries []*common.LogEntry, patterns []*common.Pattern) *ColorfulModel {
 	return &ColorfulModel{
 		entries:        entries,
 		patterns:       patterns,
@@ -326,28 +326,28 @@ func (m *ColorfulModel) coloredStat(icon, label, value string, color lipgloss.Ad
 	return fmt.Sprintf("%s %s %s", iconStyled, labelStyled, valueStyled)
 }
 
-func (m *ColorfulModel) getPatternColor(patternType parser.PatternType) lipgloss.AdaptiveColor {
+func (m *ColorfulModel) getPatternColor(patternType common.PatternType) lipgloss.AdaptiveColor {
 	switch patternType {
-	case parser.PatternTypeError:
+	case common.PatternTypeError:
 		return m.errorColor
-	case parser.PatternTypeAnomaly:
+	case common.PatternTypeAnomaly:
 		return m.warningColor
-	case parser.PatternTypePerformance:
+	case common.PatternTypePerformance:
 		return lipgloss.AdaptiveColor{Light: "#F97316", Dark: "#FB923C"}
-	case parser.PatternTypeSecurity:
+	case common.PatternTypeSecurity:
 		return lipgloss.AdaptiveColor{Light: "#DC2626", Dark: "#EF4444"}
 	default:
 		return m.primaryColor
 	}
 }
 
-func (m *ColorfulModel) getSeverityColor(severity parser.LogLevel) lipgloss.AdaptiveColor {
+func (m *ColorfulModel) getSeverityColor(severity common.LogLevel) lipgloss.AdaptiveColor {
 	switch severity {
-	case parser.LevelError:
+	case common.LevelError:
 		return m.errorColor
-	case parser.LevelWarn:
+	case common.LevelWarn:
 		return m.warningColor
-	case parser.LevelInfo:
+	case common.LevelInfo:
 		return m.primaryColor
 	default:
 		return m.secondaryColor
@@ -377,7 +377,7 @@ func minIntColorful(a, b int) int {
 }
 
 // ColorfulRun runs the enhanced colorful TUI
-func ColorfulRun(entries []*parser.LogEntry, patterns []*parser.Pattern) error {
+func ColorfulRun(entries []*common.LogEntry, patterns []*common.Pattern) error {
 	model := NewColorfulModel(entries, patterns)
 	p := tea.NewProgram(model, tea.WithAltScreen())
 	_, err := p.Run()

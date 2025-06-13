@@ -6,8 +6,8 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/yildizm/LogSum/internal/analyzer"
+	"github.com/yildizm/LogSum/internal/common"
 	"github.com/yildizm/LogSum/internal/emoji"
-	"github.com/yildizm/LogSum/internal/parser"
 )
 
 // Message types are now in messages.go for sharing
@@ -16,8 +16,8 @@ import (
 type SimpleModel struct {
 	width     int
 	height    int
-	entries   []*parser.LogEntry
-	patterns  []*parser.Pattern
+	entries   []*common.LogEntry
+	patterns  []*common.Pattern
 	analysis  *analyzer.Analysis
 	analyzing bool
 	ready     bool
@@ -25,7 +25,7 @@ type SimpleModel struct {
 }
 
 // NewSimpleModel creates a new simple model
-func NewSimpleModel(entries []*parser.LogEntry, patterns []*parser.Pattern) *SimpleModel {
+func NewSimpleModel(entries []*common.LogEntry, patterns []*common.Pattern) *SimpleModel {
 	return &SimpleModel{
 		entries:  entries,
 		patterns: patterns,
@@ -118,7 +118,7 @@ func (m *SimpleModel) startAnalysis() tea.Cmd {
 }
 
 // SimpleRun runs the simplified TUI
-func SimpleRun(entries []*parser.LogEntry, patterns []*parser.Pattern) error {
+func SimpleRun(entries []*common.LogEntry, patterns []*common.Pattern) error {
 	model := NewSimpleModel(entries, patterns)
 	p := tea.NewProgram(model, tea.WithAltScreen())
 	_, err := p.Run()

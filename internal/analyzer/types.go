@@ -3,7 +3,7 @@ package analyzer
 import (
 	"time"
 
-	"github.com/yildizm/LogSum/internal/parser"
+	"github.com/yildizm/LogSum/internal/common"
 )
 
 // Analysis represents the result of log analysis
@@ -20,8 +20,8 @@ type Analysis struct {
 
 // PatternMatch represents a matched pattern in logs
 type PatternMatch struct {
-	Pattern   *parser.Pattern    `json:"pattern"`
-	Matches   []*parser.LogEntry `json:"matches"`
+	Pattern   *common.Pattern    `json:"pattern"`
+	Matches   []*common.LogEntry `json:"matches"`
 	Count     int                `json:"count"`
 	FirstSeen time.Time          `json:"first_seen"`
 	LastSeen  time.Time          `json:"last_seen"`
@@ -30,10 +30,10 @@ type PatternMatch struct {
 // Insight represents an analysis insight
 type Insight struct {
 	Type        InsightType        `json:"type"`
-	Severity    parser.LogLevel    `json:"severity"`
+	Severity    common.LogLevel    `json:"severity"`
 	Title       string             `json:"title"`
 	Description string             `json:"description"`
-	Evidence    []*parser.LogEntry `json:"evidence"`
+	Evidence    []*common.LogEntry `json:"evidence"`
 	Confidence  float64            `json:"confidence"`
 }
 

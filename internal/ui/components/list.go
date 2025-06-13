@@ -6,7 +6,7 @@ import (
 
 	"github.com/charmbracelet/lipgloss"
 	"github.com/yildizm/LogSum/internal/analyzer"
-	"github.com/yildizm/LogSum/internal/parser"
+	"github.com/yildizm/LogSum/internal/common"
 )
 
 // ListItem represents an item in a list
@@ -248,16 +248,16 @@ func NewPatternList(patterns []analyzer.PatternMatch, width, height int) *List {
 
 		// Determine status based on pattern type
 		switch pattern.Pattern.Type {
-		case parser.PatternTypeError:
+		case common.PatternTypeError:
 			status = "error"
 			icon = "❌"
-		case parser.PatternTypeAnomaly:
+		case common.PatternTypeAnomaly:
 			status = "warning"
 			icon = "⚠️"
-		case parser.PatternTypePerformance:
+		case common.PatternTypePerformance:
 			status = "warning"
 			icon = "⚠️"
-		case parser.PatternTypeSecurity:
+		case common.PatternTypeSecurity:
 			status = "error"
 			icon = "❌"
 		}
@@ -292,13 +292,13 @@ func NewInsightList(insights []analyzer.Insight, width, height int) *List {
 
 		// Determine status based on severity
 		switch insight.Severity {
-		case parser.LevelError:
+		case common.LevelError:
 			status = "error"
 			icon = "❌"
-		case parser.LevelWarn:
+		case common.LevelWarn:
 			status = "warning"
 			icon = "⚠️"
-		case parser.LevelInfo:
+		case common.LevelInfo:
 			status = "info"
 			icon = "ℹ️"
 		}
@@ -324,7 +324,7 @@ func NewInsightList(insights []analyzer.Insight, width, height int) *List {
 }
 
 // LogList creates a list component for log entries
-func NewLogList(entries []*parser.LogEntry, width, height int) *List {
+func NewLogList(entries []*common.LogEntry, width, height int) *List {
 	list := NewList("Log Entries", width, height)
 	list.ShowNumbers = false // Line numbers are more relevant for logs
 
@@ -333,17 +333,17 @@ func NewLogList(entries []*parser.LogEntry, width, height int) *List {
 		icon := "ℹ️"
 
 		// Determine status based on log level
-		switch entry.Level {
-		case parser.LevelError:
+		switch entry.LogLevel {
+		case common.LevelError:
 			status = "error"
 			icon = "❌"
-		case parser.LevelWarn:
+		case common.LevelWarn:
 			status = "warning"
 			icon = "⚠️"
-		case parser.LevelInfo:
+		case common.LevelInfo:
 			status = "info"
 			icon = "ℹ️"
-		case parser.LevelDebug:
+		case common.LevelDebug:
 			status = "debug"
 			icon = "🐛"
 		}

@@ -1,8 +1,8 @@
-package parser
+package common
 
 import (
+	"github.com/yildizm/go-logparser"
 	"strings"
-	"time"
 )
 
 // LogLevel represents the severity of a log entry
@@ -16,11 +16,10 @@ const (
 	LevelFatal
 )
 
-// LogEntry represents a parsed log line
+// LogEntry extends go-logparser.LogEntry with additional fields needed by LogSum
 type LogEntry struct {
-	Timestamp  time.Time         `json:"timestamp"`
-	Level      LogLevel          `json:"level"`
-	Message    string            `json:"message"`
+	logparser.LogEntry
+	LogLevel   LogLevel          `json:"level_enum"`
 	Service    string            `json:"service,omitempty"`
 	TraceID    string            `json:"trace_id,omitempty"`
 	Source     string            `json:"source,omitempty"`
@@ -84,5 +83,16 @@ func ParseLogLevel(s string) LogLevel {
 		return LevelFatal
 	default:
 		return LevelInfo
+	}
+}
+
+// ConvertToCommonLogEntry converts go-logparser.LogEntry to common.LogEntry
+func ConvertToCommonLogEntry(entry *logparser.LogEntry, lineNumber int) *LogEntry {
+	return &LogEntry{
+		LogEntry:   *entry,
+		LogLevel:   ParseLogLevel(entry.Level),
+		LineNumber: lineNumber,
+		Raw:        "", // Will be set elsewhere if needed
+		Metadata:   make(map[string]string),
 	}
 }

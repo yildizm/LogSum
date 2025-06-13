@@ -4,19 +4,19 @@ import (
 	"context"
 	"time"
 
-	"github.com/yildizm/LogSum/internal/parser"
+	"github.com/yildizm/LogSum/internal/common"
 )
 
 // Analyzer performs log analysis
 type Analyzer interface {
 	// Analyze performs analysis on log entries
-	Analyze(ctx context.Context, entries []*parser.LogEntry) (*Analysis, error)
+	Analyze(ctx context.Context, entries []*common.LogEntry) (*Analysis, error)
 
 	// AddPattern adds a pattern for detection
-	AddPattern(pattern *parser.Pattern) error
+	AddPattern(pattern *common.Pattern) error
 
 	// SetPatterns sets all patterns for detection
-	SetPatterns(patterns []*parser.Pattern) error
+	SetPatterns(patterns []*common.Pattern) error
 }
 
 // Engine provides different analysis strategies

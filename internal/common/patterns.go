@@ -7,7 +7,6 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/yildizm/LogSum/internal/parser"
 	yaml "gopkg.in/yaml.v3"
 )
 
@@ -15,7 +14,7 @@ import (
 var defaultPatternsYAML []byte
 
 // LoadPatternsFromFile loads patterns from a single YAML file
-func LoadPatternsFromFile(filename string) ([]*parser.Pattern, error) {
+func LoadPatternsFromFile(filename string) ([]*Pattern, error) {
 	// Validate and sanitize file path for security
 	if err := validatePatternFilePath(filename); err != nil {
 		return nil, fmt.Errorf("invalid file path: %w", err)
@@ -28,13 +27,13 @@ func LoadPatternsFromFile(filename string) ([]*parser.Pattern, error) {
 	}
 
 	// Try to parse as single pattern first
-	var pattern parser.Pattern
+	var pattern Pattern
 	if err := yaml.Unmarshal(data, &pattern); err == nil && pattern.ID != "" {
-		return []*parser.Pattern{&pattern}, nil
+		return []*Pattern{&pattern}, nil
 	}
 
 	// Try to parse as array of patterns
-	var patterns []*parser.Pattern
+	var patterns []*Pattern
 	if err := yaml.Unmarshal(data, &patterns); err != nil {
 		return nil, fmt.Errorf("failed to parse YAML: %w", err)
 	}
@@ -75,8 +74,8 @@ func isConfigPath(path string) bool {
 }
 
 // LoadDefaultPatterns loads embedded default patterns
-func LoadDefaultPatterns() ([]*parser.Pattern, error) {
-	var patterns []*parser.Pattern
+func LoadDefaultPatterns() ([]*Pattern, error) {
+	var patterns []*Pattern
 	if err := yaml.Unmarshal(defaultPatternsYAML, &patterns); err != nil {
 		return nil, fmt.Errorf("failed to parse embedded default patterns: %w", err)
 	}
@@ -84,7 +83,7 @@ func LoadDefaultPatterns() ([]*parser.Pattern, error) {
 }
 
 // LoadPatternsWithFallback loads embedded default patterns
-func LoadPatternsWithFallback(directory string) ([]*parser.Pattern, error) {
+func LoadPatternsWithFallback(directory string) ([]*Pattern, error) {
 	// Always use embedded default patterns
 	return LoadDefaultPatterns()
 }

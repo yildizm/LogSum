@@ -4,7 +4,7 @@ import (
 	"sort"
 	"time"
 
-	"github.com/yildizm/LogSum/internal/parser"
+	"github.com/yildizm/LogSum/internal/common"
 )
 
 // TimelineGenerator creates timeline analysis from log entries
@@ -16,7 +16,7 @@ func NewTimelineGenerator() *TimelineGenerator {
 }
 
 // GenerateTimeline creates a timeline analysis with specified bucket size
-func (g *TimelineGenerator) GenerateTimeline(entries []*parser.LogEntry, bucketSize time.Duration) *Timeline {
+func (g *TimelineGenerator) GenerateTimeline(entries []*common.LogEntry, bucketSize time.Duration) *Timeline {
 	if len(entries) == 0 || bucketSize <= 0 {
 		return &Timeline{
 			Buckets:    []TimeBucket{},
@@ -25,7 +25,7 @@ func (g *TimelineGenerator) GenerateTimeline(entries []*parser.LogEntry, bucketS
 	}
 
 	// Sort entries by timestamp to ensure proper timeline ordering
-	sortedEntries := make([]*parser.LogEntry, len(entries))
+	sortedEntries := make([]*common.LogEntry, len(entries))
 	copy(sortedEntries, entries)
 	sort.Slice(sortedEntries, func(i, j int) bool {
 		return sortedEntries[i].Timestamp.Before(sortedEntries[j].Timestamp)
@@ -66,17 +66,17 @@ func (g *TimelineGenerator) createBuckets(startTime, endTime time.Time, bucketSi
 }
 
 // distributeEntries distributes log entries into appropriate time buckets
-func (g *TimelineGenerator) distributeEntries(entries []*parser.LogEntry, buckets []TimeBucket, bucketSize time.Duration) {
+func (g *TimelineGenerator) distributeEntries(entries []*common.LogEntry, buckets []TimeBucket, bucketSize time.Duration) {
 	for _, entry := range entries {
 		bucketIndex := g.findBucketIndex(entry.Timestamp, buckets, bucketSize)
 		if bucketIndex >= 0 && bucketIndex < len(buckets) {
 			buckets[bucketIndex].EntryCount++
 
 			// Count by severity level
-			switch entry.Level {
-			case parser.LevelError, parser.LevelFatal:
+			switch entry.LogLevel {
+			case common.LevelError, common.LevelFatal:
 				buckets[bucketIndex].ErrorCount++
-			case parser.LevelWarn:
+			case common.LevelWarn:
 				buckets[bucketIndex].WarnCount++
 			}
 		}

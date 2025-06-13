@@ -7,7 +7,7 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/yildizm/LogSum/internal/parser"
+	"github.com/yildizm/LogSum/internal/common"
 )
 
 // PatternMatcher handles efficient pattern matching against log entries
@@ -17,7 +17,7 @@ type PatternMatcher struct {
 }
 
 type compiledPattern struct {
-	pattern       *parser.Pattern
+	pattern       *common.Pattern
 	regex         *regexp.Regexp
 	keywords      []string
 	keywordsLower []string // Pre-computed lowercase keywords
@@ -25,7 +25,7 @@ type compiledPattern struct {
 
 // searchableEntry pre-computes search text
 type searchableEntry struct {
-	entry      *parser.LogEntry
+	entry      *common.LogEntry
 	searchText string // Pre-computed lowercase search text
 }
 
@@ -37,7 +37,7 @@ func NewPatternMatcher() *PatternMatcher {
 }
 
 // AddPattern adds a single pattern to the matcher
-func (m *PatternMatcher) AddPattern(pattern *parser.Pattern) error {
+func (m *PatternMatcher) AddPattern(pattern *common.Pattern) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
@@ -51,7 +51,7 @@ func (m *PatternMatcher) AddPattern(pattern *parser.Pattern) error {
 }
 
 // SetPatterns sets all patterns for the matcher
-func (m *PatternMatcher) SetPatterns(patterns []*parser.Pattern) error {
+func (m *PatternMatcher) SetPatterns(patterns []*common.Pattern) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
@@ -69,7 +69,7 @@ func (m *PatternMatcher) SetPatterns(patterns []*parser.Pattern) error {
 }
 
 // MatchPatterns matches all patterns against log entries
-func (m *PatternMatcher) MatchPatterns(ctx context.Context, patterns []*parser.Pattern, entries []*parser.LogEntry) ([]PatternMatch, error) {
+func (m *PatternMatcher) MatchPatterns(ctx context.Context, patterns []*common.Pattern, entries []*common.LogEntry) ([]PatternMatch, error) {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 
@@ -82,7 +82,7 @@ func (m *PatternMatcher) MatchPatterns(ctx context.Context, patterns []*parser.P
 	for _, cp := range m.compiledPatterns {
 		matches[cp.pattern.ID] = &PatternMatch{
 			Pattern: cp.pattern,
-			Matches: []*parser.LogEntry{},
+			Matches: []*common.LogEntry{},
 			Count:   0,
 		}
 	}
@@ -119,7 +119,7 @@ func (m *PatternMatcher) MatchPatterns(ctx context.Context, patterns []*parser.P
 
 // processBatch processes a batch of entries against all patterns
 // Optimized version: pre-compute search text once per entry
-func (m *PatternMatcher) processBatch(entries []*parser.LogEntry, matches map[string]*PatternMatch) {
+func (m *PatternMatcher) processBatch(entries []*common.LogEntry, matches map[string]*PatternMatch) {
 	// Pre-compute search text for all entries
 	searchableEntries := m.precomputeSearchText(entries)
 
@@ -148,7 +148,7 @@ func (m *PatternMatcher) processBatch(entries []*parser.LogEntry, matches map[st
 
 // precomputeSearchText pre-computes search text for a batch of entries
 // This avoids repeated string concatenation in the hot path
-func (m *PatternMatcher) precomputeSearchText(entries []*parser.LogEntry) []searchableEntry {
+func (m *PatternMatcher) precomputeSearchText(entries []*common.LogEntry) []searchableEntry {
 	searchableEntries := make([]searchableEntry, len(entries))
 
 	for i, entry := range entries {
@@ -192,7 +192,7 @@ func (m *PatternMatcher) matchSearchableEntry(se searchableEntry, cp *compiledPa
 }
 
 // compilePattern compiles a pattern for efficient matching
-func (m *PatternMatcher) compilePattern(pattern *parser.Pattern) (*compiledPattern, error) {
+func (m *PatternMatcher) compilePattern(pattern *common.Pattern) (*compiledPattern, error) {
 	cp := &compiledPattern{
 		pattern: pattern,
 	}
@@ -231,12 +231,12 @@ func (m *PatternMatcher) GetCompiledPatterns() []*compiledPattern {
 }
 
 // MatchSingle matches a single entry against all patterns (useful for real-time analysis)
-func (m *PatternMatcher) MatchSingle(entry *parser.LogEntry) []string {
+func (m *PatternMatcher) MatchSingle(entry *common.LogEntry) []string {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 
 	// Pre-compute search text once
-	searchableEntries := m.precomputeSearchText([]*parser.LogEntry{entry})
+	searchableEntries := m.precomputeSearchText([]*common.LogEntry{entry})
 	se := searchableEntries[0]
 
 	var matchedPatterns []string

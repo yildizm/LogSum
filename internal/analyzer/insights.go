@@ -6,7 +6,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/yildizm/LogSum/internal/parser"
+	"github.com/yildizm/LogSum/internal/common"
 )
 
 // InsightGenerator generates insights from log analysis
@@ -27,7 +27,7 @@ func NewInsightGenerator() *InsightGenerator {
 }
 
 // GenerateInsights generates insights from log entries and pattern matches
-func (g *InsightGenerator) GenerateInsights(entries []*parser.LogEntry, matches []PatternMatch) []Insight {
+func (g *InsightGenerator) GenerateInsights(entries []*common.LogEntry, matches []PatternMatch) []Insight {
 	var insights []Insight
 
 	if len(entries) == 0 {
@@ -49,7 +49,7 @@ func (g *InsightGenerator) GenerateInsights(entries []*parser.LogEntry, matches 
 }
 
 // detectErrorSpikes detects sudden increases in error frequency
-func (g *InsightGenerator) detectErrorSpikes(entries []*parser.LogEntry, matches []PatternMatch) []Insight {
+func (g *InsightGenerator) detectErrorSpikes(entries []*common.LogEntry, matches []PatternMatch) []Insight {
 	var insights []Insight
 
 	if len(entries) < 10 {
@@ -67,7 +67,7 @@ func (g *InsightGenerator) detectErrorSpikes(entries []*parser.LogEntry, matches
 	for i, bucket := range buckets {
 		errorCount := 0
 		for _, entry := range bucket.entries {
-			if entry.Level >= parser.LevelError {
+			if entry.LogLevel >= common.LevelError {
 				errorCount++
 			}
 		}
@@ -87,7 +87,7 @@ func (g *InsightGenerator) detectErrorSpikes(entries []*parser.LogEntry, matches
 
 			insight := Insight{
 				Type:        InsightTypeErrorSpike,
-				Severity:    parser.LevelError,
+				Severity:    common.LevelError,
 				Title:       "Error Spike Detected",
 				Description: g.formatErrorSpikeDescription(currentRate, avgPreviousRate, buckets[i].startTime),
 				Evidence:    g.getErrorEntries(buckets[i].entries),
@@ -101,12 +101,12 @@ func (g *InsightGenerator) detectErrorSpikes(entries []*parser.LogEntry, matches
 }
 
 // detectPerformanceIssues detects performance-related patterns
-func (g *InsightGenerator) detectPerformanceIssues(entries []*parser.LogEntry, matches []PatternMatch) []Insight {
+func (g *InsightGenerator) detectPerformanceIssues(entries []*common.LogEntry, matches []PatternMatch) []Insight {
 	var insights []Insight
 
 	// Look for performance-related patterns
 	for _, match := range matches {
-		if match.Pattern.Type == parser.PatternTypePerformance && match.Count > 0 {
+		if match.Pattern.Type == common.PatternTypePerformance && match.Count > 0 {
 			confidence := g.calculatePatternConfidence(&match, len(entries))
 
 			insight := Insight{
@@ -126,7 +126,7 @@ func (g *InsightGenerator) detectPerformanceIssues(entries []*parser.LogEntry, m
 	if len(slowResponses) > 0 {
 		insight := Insight{
 			Type:        InsightTypePerformance,
-			Severity:    parser.LevelWarn,
+			Severity:    common.LevelWarn,
 			Title:       "Slow Response Times Detected",
 			Description: g.formatSlowResponseDescription(len(slowResponses)),
 			Evidence:    g.limitEvidence(slowResponses, 5),
@@ -139,12 +139,12 @@ func (g *InsightGenerator) detectPerformanceIssues(entries []*parser.LogEntry, m
 }
 
 // detectAnomalies detects unusual patterns in the logs
-func (g *InsightGenerator) detectAnomalies(entries []*parser.LogEntry, matches []PatternMatch) []Insight {
+func (g *InsightGenerator) detectAnomalies(entries []*common.LogEntry, matches []PatternMatch) []Insight {
 	insights := make([]Insight, 0, 10) // Pre-allocate with initial capacity
 
 	// Look for anomaly-related patterns
 	for _, match := range matches {
-		if match.Pattern.Type == parser.PatternTypeAnomaly && match.Count > 0 {
+		if match.Pattern.Type == common.PatternTypeAnomaly && match.Count > 0 {
 			confidence := g.calculatePatternConfidence(&match, len(entries))
 
 			insight := Insight{
@@ -167,13 +167,13 @@ func (g *InsightGenerator) detectAnomalies(entries []*parser.LogEntry, matches [
 }
 
 // detectRootCauses attempts to find potential root causes for errors
-func (g *InsightGenerator) detectRootCauses(entries []*parser.LogEntry, matches []PatternMatch) []Insight {
+func (g *InsightGenerator) detectRootCauses(entries []*common.LogEntry, matches []PatternMatch) []Insight {
 	var insights []Insight
 
 	// Group error patterns and look for correlations
 	errorMatches := make([]PatternMatch, 0)
 	for _, match := range matches {
-		if match.Pattern.Type == parser.PatternTypeError && match.Count > 0 {
+		if match.Pattern.Type == common.PatternTypeError && match.Count > 0 {
 			errorMatches = append(errorMatches, match)
 		}
 	}
@@ -188,7 +188,7 @@ func (g *InsightGenerator) detectRootCauses(entries []*parser.LogEntry, matches 
 		if correlation.strength >= g.correlationThreshold {
 			insight := Insight{
 				Type:        InsightTypeRootCause,
-				Severity:    parser.LevelError,
+				Severity:    common.LevelError,
 				Title:       "Potential Root Cause",
 				Description: g.formatRootCauseDescription(correlation),
 				Evidence:    g.limitEvidence(correlation.evidence, 5),
@@ -206,7 +206,7 @@ func (g *InsightGenerator) detectRootCauses(entries []*parser.LogEntry, matches 
 type timeBucket struct {
 	startTime time.Time
 	endTime   time.Time
-	entries   []*parser.LogEntry
+	entries   []*common.LogEntry
 }
 
 // TimeBucketer efficiently groups entries by time windows
@@ -218,7 +218,7 @@ type correlation struct {
 	pattern1 string
 	pattern2 string
 	strength float64
-	evidence []*parser.LogEntry
+	evidence []*common.LogEntry
 }
 
 // NewTimeBucketer creates a new time bucketer
@@ -229,7 +229,7 @@ func NewTimeBucketer(windowSize time.Duration) *TimeBucketer {
 }
 
 // GroupEntries groups entries by time windows using O(n) algorithm
-func (tb *TimeBucketer) GroupEntries(entries []*parser.LogEntry) []timeBucket {
+func (tb *TimeBucketer) GroupEntries(entries []*common.LogEntry) []timeBucket {
 	if len(entries) == 0 {
 		return nil
 	}
@@ -246,7 +246,7 @@ func (tb *TimeBucketer) GroupEntries(entries []*parser.LogEntry) []timeBucket {
 			bucket = &timeBucket{
 				startTime: bucketStart,
 				endTime:   bucketStart.Add(tb.windowSize),
-				entries:   make([]*parser.LogEntry, 0, 10), // Pre-allocate capacity
+				entries:   make([]*common.LogEntry, 0, 10), // Pre-allocate capacity
 			}
 			bucketMap[bucketStart] = bucket
 			bucketTimes = append(bucketTimes, bucketStart)
@@ -276,7 +276,7 @@ func (tb *TimeBucketer) sortedBuckets(bucketMap map[time.Time]*timeBucket, bucke
 }
 
 // groupByTimeWindow is the legacy method, now uses optimized TimeBucketer
-func (g *InsightGenerator) groupByTimeWindow(entries []*parser.LogEntry, windowSize time.Duration) []timeBucket {
+func (g *InsightGenerator) groupByTimeWindow(entries []*common.LogEntry, windowSize time.Duration) []timeBucket {
 	bucketer := NewTimeBucketer(windowSize)
 	return bucketer.GroupEntries(entries)
 }
@@ -297,25 +297,25 @@ func (g *InsightGenerator) calculatePatternConfidence(match *PatternMatch, total
 	return min(freqScore+patternScore, 0.95)
 }
 
-func (g *InsightGenerator) getErrorEntries(entries []*parser.LogEntry) []*parser.LogEntry {
-	var errorEntries []*parser.LogEntry
+func (g *InsightGenerator) getErrorEntries(entries []*common.LogEntry) []*common.LogEntry {
+	var errorEntries []*common.LogEntry
 	for _, entry := range entries {
-		if entry.Level >= parser.LevelError {
+		if entry.LogLevel >= common.LevelError {
 			errorEntries = append(errorEntries, entry)
 		}
 	}
 	return g.limitEvidence(errorEntries, 5)
 }
 
-func (g *InsightGenerator) limitEvidence(entries []*parser.LogEntry, limit int) []*parser.LogEntry {
+func (g *InsightGenerator) limitEvidence(entries []*common.LogEntry, limit int) []*common.LogEntry {
 	if len(entries) <= limit {
 		return entries
 	}
 	return entries[:limit]
 }
 
-func (g *InsightGenerator) detectSlowResponses(entries []*parser.LogEntry) []*parser.LogEntry {
-	var slowEntries []*parser.LogEntry
+func (g *InsightGenerator) detectSlowResponses(entries []*common.LogEntry) []*common.LogEntry {
+	var slowEntries []*common.LogEntry
 
 	slowKeywords := []string{"slow", "timeout", "taking too long", "high latency", "response time"}
 
@@ -332,7 +332,7 @@ func (g *InsightGenerator) detectSlowResponses(entries []*parser.LogEntry) []*pa
 	return slowEntries
 }
 
-func (g *InsightGenerator) detectServiceAnomalies(entries []*parser.LogEntry) []Insight {
+func (g *InsightGenerator) detectServiceAnomalies(entries []*common.LogEntry) []Insight {
 	// Simple service-based anomaly detection
 	serviceCounts := make(map[string]int)
 	serviceErrors := make(map[string]int)
@@ -340,7 +340,7 @@ func (g *InsightGenerator) detectServiceAnomalies(entries []*parser.LogEntry) []
 	for _, entry := range entries {
 		if entry.Service != "" {
 			serviceCounts[entry.Service]++
-			if entry.Level >= parser.LevelError {
+			if entry.LogLevel >= common.LevelError {
 				serviceErrors[entry.Service]++
 			}
 		}
@@ -353,10 +353,10 @@ func (g *InsightGenerator) detectServiceAnomalies(entries []*parser.LogEntry) []
 			// Service has >50% error rate with significant volume
 			insight := Insight{
 				Type:        InsightTypeAnomaly,
-				Severity:    parser.LevelError,
+				Severity:    common.LevelError,
 				Title:       "High Error Rate in Service",
 				Description: g.formatServiceAnomalyDescription(service, errorCount, totalCount),
-				Evidence:    []*parser.LogEntry{}, // Would populate with service entries
+				Evidence:    []*common.LogEntry{}, // Would populate with service entries
 				Confidence:  0.85,
 			}
 			insights = append(insights, insight)
