@@ -13,6 +13,7 @@ import (
 	"github.com/spf13/cobra"
 	"github.com/yildizm/LogSum/internal/analyzer"
 	"github.com/yildizm/LogSum/internal/common"
+	"github.com/yildizm/LogSum/internal/formatter"
 	"github.com/yildizm/LogSum/internal/ui"
 	"github.com/yildizm/go-logparser"
 )
@@ -308,7 +309,18 @@ func runAnalysisAndOutput(ctx context.Context, entries []*common.LogEntry, patte
 		return ui.InteractiveRun(entries, patterns)
 	}
 
-	// Traditional CLI analysis
+	// Perform CLI analysis
+	analysis, err := performAnalysis(ctx, entries, patterns)
+	if err != nil {
+		return err
+	}
+
+	// Format and output results
+	return formatAndOutputResults(analysis)
+}
+
+// performAnalysis runs the analysis engine with patterns
+func performAnalysis(ctx context.Context, entries []*common.LogEntry, patterns []*common.Pattern) (*analyzer.Analysis, error) {
 	engine := analyzer.NewEngine()
 	if len(patterns) > 0 {
 		if err := engine.SetPatterns(patterns); err != nil {
@@ -318,32 +330,41 @@ func runAnalysisAndOutput(ctx context.Context, entries []*common.LogEntry, patte
 		}
 	}
 
-	// Perform analysis
 	if isVerbose() {
 		fmt.Fprintf(os.Stderr, "Performing analysis...\n")
 	}
 
 	analysis, err := engine.Analyze(ctx, entries)
 	if err != nil {
-		return fmt.Errorf("analysis failed: %w", err)
+		return nil, fmt.Errorf("analysis failed: %w", err)
 	}
 
-	// Format and output results
-	formatter := GetFormatter(getOutputFormat())
-	output, err := formatter.Format(analysis)
+	return analysis, nil
+}
+
+// formatAndOutputResults formats analysis results and handles output
+func formatAndOutputResults(analysis *analyzer.Analysis) error {
+	formatterInstance, err := getFormatter(getOutputFormat(), !noColor)
+	if err != nil {
+		return fmt.Errorf("failed to get formatter: %w", err)
+	}
+
+	output, err := formatterInstance.Format(analysis)
 	if err != nil {
 		return fmt.Errorf("failed to format output: %w", err)
 	}
 
-	// Handle output destination
+	return handleOutputDestination(output)
+}
+
+// handleOutputDestination writes output to file or stdout
+func handleOutputDestination(output []byte) error {
 	if analyzeOutputFile != "" {
-		// Validate output file path for security
 		if err := validateOutputFilePath(analyzeOutputFile); err != nil {
 			return fmt.Errorf("invalid output file path: %w", err)
 		}
 
-		// Write to file
-		if err := writeOutputToFile(output, analyzeOutputFile); err != nil {
+		if err := writeOutputBytesToFile(output, analyzeOutputFile); err != nil {
 			return fmt.Errorf("failed to write output to file: %w", err)
 		}
 
@@ -351,8 +372,7 @@ func runAnalysisAndOutput(ctx context.Context, entries []*common.LogEntry, patte
 			fmt.Fprintf(os.Stderr, "Output saved to: %s\n", analyzeOutputFile)
 		}
 	} else {
-		// Write to stdout
-		fmt.Print(output)
+		fmt.Print(string(output))
 	}
 
 	return nil
@@ -387,8 +407,24 @@ func validateOutputFilePath(path string) error {
 	return nil
 }
 
-// writeOutputToFile writes output to a file with proper error handling
-func writeOutputToFile(output, filePath string) error {
+// getFormatter returns the appropriate formatter for the given format
+func getFormatter(format string, color bool) (formatter.Formatter, error) {
+	switch format {
+	case "json":
+		return formatter.NewJSON(), nil
+	case "markdown", "md":
+		return formatter.NewMarkdown(), nil
+	case "csv":
+		return formatter.NewCSV(), nil
+	case "text", "terminal", "":
+		return formatter.NewTerminal(color), nil
+	default:
+		return nil, fmt.Errorf("unknown format: %s", format)
+	}
+}
+
+// writeOutputBytesToFile writes output to a file with proper error handling
+func writeOutputBytesToFile(output []byte, filePath string) error {
 	// Validate file path again for security
 	cleanPath := filepath.Clean(filePath)
 
@@ -404,7 +440,7 @@ func writeOutputToFile(output, filePath string) error {
 	}()
 
 	// Write the output
-	if _, err := file.WriteString(output); err != nil {
+	if _, err := file.Write(output); err != nil {
 		return fmt.Errorf("failed to write output: %w", err)
 	}
 

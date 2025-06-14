@@ -4,6 +4,12 @@
 [![CI](https://github.com/yildizm/LogSum/workflows/CI/badge.svg)](https://github.com/yildizm/LogSum/actions)
 [![Go Report Card](https://goreportcard.com/badge/github.com/yildizm/LogSum)](https://goreportcard.com/report/github.com/yildizm/LogSum)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![Go Version](https://img.shields.io/github/go-mod/go-version/yildizm/LogSum)](https://github.com/yildizm/LogSum)
+[![Release](https://img.shields.io/github/v/release/yildizm/LogSum)](https://github.com/yildizm/LogSum/releases)
+[![Issues](https://img.shields.io/github/issues/yildizm/LogSum)](https://github.com/yildizm/LogSum/issues)
+[![Stars](https://img.shields.io/github/stars/yildizm/LogSum)](https://github.com/yildizm/LogSum/stargazers)
+[![Maintenance](https://img.shields.io/badge/Maintained%3F-yes-green.svg)](https://github.com/yildizm/LogSum/graphs/commit-activity)
+[![Performance](https://img.shields.io/badge/Performance-High-brightgreen.svg)](https://github.com/yildizm/LogSum#performance)
 
 Fast log analysis with terminal UI.
 
@@ -319,3 +325,5 @@ MIT License - see [LICENSE](LICENSE) for details.
 
 - Built with [Bubble Tea](https://github.com/charmbracelet/bubbletea) for the TUI
 - Uses [Cobra](https://github.com/spf13/cobra) for CLI
+- Terminal formatting powered by [go-termfmt](https://github.com/yildizm/go-termfmt) - Beautiful terminal formatting library
+- Log parsing powered by [go-logparser](https://github.com/yildizm/go-logparser) - High-performance log parsing library
