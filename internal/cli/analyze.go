@@ -14,6 +14,8 @@ import (
 	"github.com/yildizm/LogSum/internal/analyzer"
 	"github.com/yildizm/LogSum/internal/common"
 	"github.com/yildizm/LogSum/internal/config"
+	"github.com/yildizm/LogSum/internal/correlation"
+	"github.com/yildizm/LogSum/internal/docstore"
 	"github.com/yildizm/LogSum/internal/formatter"
 	"github.com/yildizm/LogSum/internal/ui"
 	"github.com/yildizm/go-logparser"
@@ -27,6 +29,8 @@ var (
 	analyzeMaxLines   int
 	analyzeNoTUI      bool
 	analyzeOutputFile string
+	analyzeDocsPath   string
+	analyzeCorrelate  bool
 )
 
 func newAnalyzeCommand() *cobra.Command {
@@ -54,6 +58,8 @@ Examples:
 	cmd.Flags().IntVar(&analyzeMaxLines, "max-lines", 100000, "maximum lines to analyze")
 	cmd.Flags().BoolVar(&analyzeNoTUI, "no-tui", false, "disable terminal UI, output to stdout")
 	cmd.Flags().StringVar(&analyzeOutputFile, "output-file", "", "save output to file instead of stdout")
+	cmd.Flags().StringVar(&analyzeDocsPath, "docs", "", "path to documentation directory for correlation")
+	cmd.Flags().BoolVar(&analyzeCorrelate, "correlate", false, "enable error-documentation correlation")
 
 	return cmd
 }
@@ -444,8 +450,19 @@ func runAnalysisAndOutput(ctx context.Context, entries []*common.LogEntry, patte
 		return err
 	}
 
+	// Perform document correlation if enabled
+	var correlationResult *correlation.CorrelationResult
+	if analyzeCorrelate && analyzeDocsPath != "" {
+		correlationResult, err = performCorrelation(ctx, analysis)
+		if err != nil {
+			if isVerbose() {
+				fmt.Fprintf(os.Stderr, "Warning: correlation failed: %v\n", err)
+			}
+		}
+	}
+
 	// Format and output results
-	return formatAndOutputResults(analysis)
+	return formatAndOutputResults(analysis, correlationResult)
 }
 
 // performAnalysis runs the analysis engine with patterns
@@ -471,8 +488,67 @@ func performAnalysis(ctx context.Context, entries []*common.LogEntry, patterns [
 	return analysis, nil
 }
 
+// performCorrelation runs document correlation on analysis results
+func performCorrelation(ctx context.Context, analysis *analyzer.Analysis) (*correlation.CorrelationResult, error) {
+	if isVerbose() {
+		fmt.Fprintf(os.Stderr, "Setting up document correlation...\n")
+	}
+
+	// Create document store
+	store, err := setupDocumentStore(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to setup document store: %w", err)
+	}
+	defer func() {
+		if err := store.Close(); err != nil && isVerbose() {
+			fmt.Fprintf(os.Stderr, "Warning: failed to close document store: %v\n", err)
+		}
+	}()
+
+	// Create correlator
+	correlator := correlation.NewCorrelator()
+	if err := correlator.SetDocumentStore(store); err != nil {
+		return nil, fmt.Errorf("failed to configure correlator: %w", err)
+	}
+
+	if isVerbose() {
+		fmt.Fprintf(os.Stderr, "Running correlation analysis...\n")
+	}
+
+	// Perform correlation
+	result, err := correlator.Correlate(ctx, analysis)
+	if err != nil {
+		return nil, fmt.Errorf("correlation failed: %w", err)
+	}
+
+	if isVerbose() {
+		fmt.Fprintf(os.Stderr, "Found %d correlations out of %d patterns\n",
+			result.CorrelatedPatterns, result.TotalPatterns)
+	}
+
+	return result, nil
+}
+
+// setupDocumentStore creates and populates a document store
+func setupDocumentStore(ctx context.Context) (docstore.DocumentStore, error) {
+	// Create memory-based document store
+	store := docstore.NewMemoryStore()
+	scanner := docstore.NewMarkdownScanner()
+	indexer := docstore.NewMemoryIndexer()
+
+	docStore := docstore.NewStore(store, scanner, indexer)
+
+	// Scan and index documents from the specified path
+	patterns := []string{"*.md", "*.txt", "*.rst"}
+	if err := docStore.ProcessDirectoryWithContext(ctx, analyzeDocsPath, patterns, nil); err != nil {
+		return nil, fmt.Errorf("failed to index documents: %w", err)
+	}
+
+	return store, nil
+}
+
 // formatAndOutputResults formats analysis results and handles output
-func formatAndOutputResults(analysis *analyzer.Analysis) error {
+func formatAndOutputResults(analysis *analyzer.Analysis, correlationResult *correlation.CorrelationResult) error {
 	formatterInstance, err := getFormatter(getOutputFormat(), !noColor)
 	if err != nil {
 		return fmt.Errorf("failed to get formatter: %w", err)
@@ -483,7 +559,47 @@ func formatAndOutputResults(analysis *analyzer.Analysis) error {
 		return fmt.Errorf("failed to format output: %w", err)
 	}
 
+	// Append correlation results if available
+	if correlationResult != nil {
+		correlationOutput := formatCorrelationResults(correlationResult)
+		output = append(output, correlationOutput...)
+	}
+
 	return handleOutputDestination(output)
+}
+
+// formatCorrelationResults formats correlation results as text
+func formatCorrelationResults(result *correlation.CorrelationResult) []byte {
+	if result == nil || len(result.Correlations) == 0 {
+		return []byte("\n--- Document Correlations ---\nNo correlations found.\n")
+	}
+
+	var output strings.Builder
+	output.WriteString("\n--- Document Correlations ---\n")
+	output.WriteString(fmt.Sprintf("Found %d correlations out of %d patterns\n\n",
+		result.CorrelatedPatterns, result.TotalPatterns))
+
+	for i, correlation := range result.Correlations {
+		output.WriteString(fmt.Sprintf("Pattern %d: %s\n", i+1, correlation.Pattern.Name))
+		output.WriteString(fmt.Sprintf("  Description: %s\n", correlation.Pattern.Description))
+		output.WriteString(fmt.Sprintf("  Keywords: %s\n", strings.Join(correlation.Keywords, ", ")))
+		output.WriteString(fmt.Sprintf("  Match Count: %d\n", correlation.MatchCount))
+		output.WriteString("  Related Documents:\n")
+
+		for j, docMatch := range correlation.DocumentMatches {
+			if j >= 3 { // Limit to top 3 documents
+				break
+			}
+			output.WriteString(fmt.Sprintf("    %d. %s (Score: %.2f)\n",
+				j+1, docMatch.Document.Title, docMatch.Score))
+			output.WriteString(fmt.Sprintf("       Path: %s\n", docMatch.Document.Path))
+			output.WriteString(fmt.Sprintf("       Keywords: %s\n",
+				strings.Join(docMatch.MatchedKeywords, ", ")))
+		}
+		output.WriteString("\n")
+	}
+
+	return []byte(output.String())
 }
 
 // handleOutputDestination writes output to file or stdout
