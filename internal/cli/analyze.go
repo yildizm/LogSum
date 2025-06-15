@@ -13,6 +13,7 @@ import (
 	"github.com/spf13/cobra"
 	"github.com/yildizm/LogSum/internal/analyzer"
 	"github.com/yildizm/LogSum/internal/common"
+	"github.com/yildizm/LogSum/internal/config"
 	"github.com/yildizm/LogSum/internal/formatter"
 	"github.com/yildizm/LogSum/internal/ui"
 	"github.com/yildizm/go-logparser"
@@ -58,6 +59,17 @@ Examples:
 }
 
 func runAnalyze(cmd *cobra.Command, args []string) error {
+	// Get configuration
+	cfg := GetGlobalConfig()
+
+	// Use config values if flags weren't explicitly set
+	if !cmd.Flag("timeout").Changed {
+		analyzeTimeout = cfg.Analysis.Timeout
+	}
+	if !cmd.Flag("max-lines").Changed {
+		analyzeMaxLines = cfg.Analysis.MaxEntries
+	}
+
 	ctx, cancel := context.WithTimeout(context.Background(), analyzeTimeout)
 	defer cancel()
 
@@ -76,7 +88,7 @@ func runAnalyze(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	// Load patterns
+	// Load patterns using config
 	patterns := loadAnalysisPatterns()
 
 	// Run analysis
@@ -264,36 +276,153 @@ func parseWithSpecificFormat(lines []string) ([]*common.LogEntry, error) {
 
 // loadAnalysisPatterns loads patterns based on configuration
 func loadAnalysisPatterns() []*common.Pattern {
+	cfg := GetGlobalConfig()
+
+	// Check if patterns flag was explicitly set
+	if analyzePatterns != "" {
+		return loadPatternsFromFlag()
+	}
+
+	return loadPatternsFromConfig(cfg)
+}
+
+// loadPatternsFromFlag loads patterns from the command line flag
+func loadPatternsFromFlag() []*common.Pattern {
+	loadedPatterns, err := loadPatternsFromPath(analyzePatterns)
+	if err != nil {
+		if isVerbose() {
+			fmt.Fprintf(os.Stderr, "Warning: failed to load patterns from %s: %v\n", analyzePatterns, err)
+		}
+		return nil
+	}
+
+	if isVerbose() {
+		fmt.Fprintf(os.Stderr, "Loaded %d patterns from flag\n", len(loadedPatterns))
+	}
+	return loadedPatterns
+}
+
+// loadPatternsFromConfig loads patterns from configuration settings
+func loadPatternsFromConfig(cfg *config.Config) []*common.Pattern {
 	var patterns []*common.Pattern
 
-	if analyzePatterns != "" {
-		loadedPatterns, err := loadPatternsFromPath(analyzePatterns)
-		if err != nil {
-			if isVerbose() {
-				fmt.Fprintf(os.Stderr, "Warning: failed to load patterns from %s: %v\n", analyzePatterns, err)
-			}
-		} else {
-			patterns = loadedPatterns
-			if isVerbose() {
-				fmt.Fprintf(os.Stderr, "Loaded %d patterns\n", len(patterns))
-			}
+	// Load patterns from configured directories
+	patterns = append(patterns, loadPatternsFromDirectories(cfg.Patterns.Directories)...)
+
+	// Add custom patterns from config
+	if len(cfg.Patterns.CustomPatterns) > 0 {
+		customPatterns := convertCustomPatterns(cfg.Patterns.CustomPatterns)
+		patterns = append(patterns, customPatterns...)
+		if isVerbose() {
+			fmt.Fprintf(os.Stderr, "Loaded %d custom patterns from config\n", len(customPatterns))
 		}
-	} else {
-		// Use embedded default patterns
-		loadedPatterns, err := common.LoadDefaultPatterns()
-		if err != nil {
-			if isVerbose() {
-				fmt.Fprintf(os.Stderr, "Warning: failed to load default patterns: %v\n", err)
-			}
-		} else {
-			patterns = loadedPatterns
-			if isVerbose() {
-				fmt.Fprintf(os.Stderr, "Loaded %d default patterns\n", len(patterns))
+	}
+
+	// Use embedded default patterns if enabled and no patterns loaded
+	if cfg.Patterns.EnableDefaults && len(patterns) == 0 {
+		patterns = loadDefaultPatterns()
+	}
+
+	return patterns
+}
+
+// loadPatternsFromDirectories loads patterns from configured directories
+func loadPatternsFromDirectories(directories []string) []*common.Pattern {
+	var patterns []*common.Pattern
+
+	for _, dir := range directories {
+		if _, err := os.Stat(dir); err == nil {
+			loadedPatterns, err := loadPatternsFromPath(dir)
+			if err != nil {
+				if isVerbose() {
+					fmt.Fprintf(os.Stderr, "Warning: failed to load patterns from %s: %v\n", dir, err)
+				}
+			} else {
+				patterns = append(patterns, loadedPatterns...)
+				if isVerbose() {
+					fmt.Fprintf(os.Stderr, "Loaded %d patterns from %s\n", len(loadedPatterns), dir)
+				}
 			}
 		}
 	}
 
 	return patterns
+}
+
+// loadDefaultPatterns loads embedded default patterns
+func loadDefaultPatterns() []*common.Pattern {
+	loadedPatterns, err := common.LoadDefaultPatterns()
+	if err != nil {
+		if isVerbose() {
+			fmt.Fprintf(os.Stderr, "Warning: failed to load default patterns: %v\n", err)
+		}
+		return nil
+	}
+
+	if isVerbose() {
+		fmt.Fprintf(os.Stderr, "Loaded %d default patterns\n", len(loadedPatterns))
+	}
+	return loadedPatterns
+}
+
+// convertCustomPatterns converts config custom patterns to common.Pattern format
+func convertCustomPatterns(customPatterns map[string]interface{}) []*common.Pattern {
+	var patterns []*common.Pattern
+
+	for name, patternData := range customPatterns {
+		patternMap, ok := patternData.(map[string]interface{})
+		if !ok {
+			continue
+		}
+
+		pattern := convertSinglePattern(name, patternMap)
+		if pattern != nil {
+			patterns = append(patterns, pattern)
+		}
+	}
+
+	return patterns
+}
+
+// convertSinglePattern converts a single pattern map to common.Pattern
+func convertSinglePattern(name string, patternMap map[string]interface{}) *common.Pattern {
+	pattern := &common.Pattern{
+		ID:   name,
+		Name: name,
+	}
+
+	if patternStr, ok := patternMap["pattern"].(string); ok {
+		pattern.Regex = patternStr
+	}
+	if severityStr, ok := patternMap["severity"].(string); ok {
+		pattern.Severity = convertSeverity(severityStr)
+	}
+	if description, ok := patternMap["description"].(string); ok {
+		pattern.Description = description
+	}
+
+	if pattern.Regex != "" {
+		return pattern
+	}
+	return nil
+}
+
+// convertSeverity converts string severity to LogLevel
+func convertSeverity(severityStr string) common.LogLevel {
+	switch strings.ToLower(severityStr) {
+	case "debug":
+		return common.LevelDebug
+	case "info":
+		return common.LevelInfo
+	case "warn", "warning":
+		return common.LevelWarn
+	case "error":
+		return common.LevelError
+	case "fatal":
+		return common.LevelFatal
+	default:
+		return common.LevelInfo
+	}
 }
 
 // runAnalysisAndOutput performs analysis and outputs results

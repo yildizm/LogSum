@@ -1,85 +1,166 @@
 package config
 
 import (
+	"fmt"
 	"time"
 )
 
-// Config holds application configuration
+// Config holds the complete application configuration
 type Config struct {
-	// Parser settings
-	Parser ParserConfig `yaml:"parser" json:"parser"`
-
-	// Analyzer settings
-	Analyzer AnalyzerConfig `yaml:"analyzer" json:"analyzer"`
-
-	// UI settings
-	UI UIConfig `yaml:"ui" json:"ui"`
-
-	// Pattern settings
-	Patterns PatternConfig `yaml:"patterns" json:"patterns"`
+	Version  string         `yaml:"version" json:"version"`
+	Patterns PatternConfig  `yaml:"patterns" json:"patterns"`
+	AI       AIConfig       `yaml:"ai" json:"ai"`
+	Storage  StorageConfig  `yaml:"storage" json:"storage"`
+	Output   OutputConfig   `yaml:"output" json:"output"`
+	Analysis AnalysisConfig `yaml:"analysis" json:"analysis"`
 }
 
-// ParserConfig configures parsing behavior
-type ParserConfig struct {
-	MaxLineLength int           `yaml:"max_line_length" json:"max_line_length"`
-	BufferSize    int           `yaml:"buffer_size" json:"buffer_size"`
-	Timeout       time.Duration `yaml:"timeout" json:"timeout"`
-	StrictMode    bool          `yaml:"strict_mode" json:"strict_mode"`
+// PatternConfig configures pattern loading and processing
+type PatternConfig struct {
+	Directories    []string               `yaml:"directories" json:"directories"`
+	AutoReload     bool                   `yaml:"auto_reload" json:"auto_reload"`
+	CustomPatterns map[string]interface{} `yaml:"custom_patterns" json:"custom_patterns"`
+	EnableDefaults bool                   `yaml:"enable_defaults" json:"enable_defaults"`
 }
 
-// AnalyzerConfig configures analysis behavior
-type AnalyzerConfig struct {
+// AIConfig configures AI provider settings
+type AIConfig struct {
+	Provider   string        `yaml:"provider" json:"provider"`       // ollama|openai|anthropic
+	Model      string        `yaml:"model" json:"model"`             // model name/identifier
+	Endpoint   string        `yaml:"endpoint" json:"endpoint"`       // API endpoint URL
+	APIKey     string        `yaml:"api_key" json:"api_key"`         // API key (support env var reference)
+	Timeout    time.Duration `yaml:"timeout" json:"timeout"`         // request timeout
+	MaxRetries int           `yaml:"max_retries" json:"max_retries"` // retry count
+}
+
+// StorageConfig configures storage and caching
+type StorageConfig struct {
+	CacheDir     string `yaml:"cache_dir" json:"cache_dir"`           // directory for caches
+	IndexPath    string `yaml:"index_path" json:"index_path"`         // document index location
+	VectorDBPath string `yaml:"vector_db_path" json:"vector_db_path"` // vector storage location
+	TempDir      string `yaml:"temp_dir" json:"temp_dir"`             // temporary file location
+}
+
+// OutputConfig configures output formatting and display
+type OutputConfig struct {
+	DefaultFormat   string `yaml:"default_format" json:"default_format"`     // json|text|markdown|csv
+	ColorMode       string `yaml:"color_mode" json:"color_mode"`             // auto|always|never
+	Verbose         bool   `yaml:"verbose" json:"verbose"`                   // default verbosity
+	TimestampFormat string `yaml:"timestamp_format" json:"timestamp_format"` // time format string
+	ShowProgress    bool   `yaml:"show_progress" json:"show_progress"`       // show progress bars
+	CompactMode     bool   `yaml:"compact_mode" json:"compact_mode"`         // compact output mode
+}
+
+// AnalysisConfig configures analysis behavior
+type AnalysisConfig struct {
 	MaxEntries      int           `yaml:"max_entries" json:"max_entries"`
 	TimelineBuckets int           `yaml:"timeline_buckets" json:"timeline_buckets"`
 	EnableInsights  bool          `yaml:"enable_insights" json:"enable_insights"`
 	Timeout         time.Duration `yaml:"timeout" json:"timeout"`
+	BufferSize      int           `yaml:"buffer_size" json:"buffer_size"`
+	MaxLineLength   int           `yaml:"max_line_length" json:"max_line_length"`
+	StrictMode      bool          `yaml:"strict_mode" json:"strict_mode"`
 }
 
-// UIConfig configures UI behavior
-type UIConfig struct {
-	Theme        string `yaml:"theme" json:"theme"`
-	ShowProgress bool   `yaml:"show_progress" json:"show_progress"`
-	CompactMode  bool   `yaml:"compact_mode" json:"compact_mode"`
-	ColorOutput  bool   `yaml:"color_output" json:"color_output"`
-}
-
-// PatternConfig configures pattern loading
-type PatternConfig struct {
-	Directory      string   `yaml:"directory" json:"directory"`
-	Files          []string `yaml:"files" json:"files"`
-	EnableDefaults bool     `yaml:"enable_defaults" json:"enable_defaults"`
-}
-
-// LoadConfig loads configuration from file
-func LoadConfig(path string) (*Config, error) {
-	// Implementation to be added
-	return DefaultConfig(), nil
-}
-
-// DefaultConfig returns default configuration
+// DefaultConfig returns a configuration with sensible defaults
 func DefaultConfig() *Config {
 	return &Config{
-		Parser: ParserConfig{
-			MaxLineLength: 1024 * 1024, // 1MB
-			BufferSize:    4096,
-			Timeout:       30 * time.Second,
-			StrictMode:    false,
+		Version: "1.0",
+		Patterns: PatternConfig{
+			Directories:    []string{"./patterns", "./examples/patterns"},
+			AutoReload:     false,
+			CustomPatterns: make(map[string]interface{}),
+			EnableDefaults: true,
 		},
-		Analyzer: AnalyzerConfig{
+		AI: AIConfig{
+			Provider:   "ollama",
+			Model:      "llama3.2",
+			Endpoint:   "http://localhost:11434",
+			APIKey:     "",
+			Timeout:    30 * time.Second,
+			MaxRetries: 3,
+		},
+		Storage: StorageConfig{
+			CacheDir:     "~/.cache/logsum",
+			IndexPath:    "~/.cache/logsum/index.db",
+			VectorDBPath: "~/.cache/logsum/vectors.db",
+			TempDir:      "/tmp/logsum",
+		},
+		Output: OutputConfig{
+			DefaultFormat:   "text",
+			ColorMode:       "auto",
+			Verbose:         false,
+			TimestampFormat: "2006-01-02 15:04:05",
+			ShowProgress:    true,
+			CompactMode:     false,
+		},
+		Analysis: AnalysisConfig{
 			MaxEntries:      100000,
 			TimelineBuckets: 60,
 			EnableInsights:  true,
 			Timeout:         60 * time.Second,
-		},
-		UI: UIConfig{
-			Theme:        "default",
-			ShowProgress: true,
-			CompactMode:  false,
-			ColorOutput:  true,
-		},
-		Patterns: PatternConfig{
-			Directory:      "configs/patterns",
-			EnableDefaults: true,
+			BufferSize:      4096,
+			MaxLineLength:   1024 * 1024, // 1MB
+			StrictMode:      false,
 		},
 	}
+}
+
+// Validate validates the configuration
+func (c *Config) Validate() error {
+	// Validate AI provider
+	if c.AI.Provider != "" {
+		validProviders := map[string]bool{
+			"ollama":    true,
+			"openai":    true,
+			"anthropic": true,
+		}
+		if !validProviders[c.AI.Provider] {
+			return fmt.Errorf("invalid AI provider: %s (must be one of: ollama, openai, anthropic)", c.AI.Provider)
+		}
+	}
+
+	// Validate output format
+	if c.Output.DefaultFormat != "" {
+		validFormats := map[string]bool{
+			"json":     true,
+			"text":     true,
+			"markdown": true,
+			"csv":      true,
+		}
+		if !validFormats[c.Output.DefaultFormat] {
+			return fmt.Errorf("invalid output format: %s (must be one of: json, text, markdown, csv)", c.Output.DefaultFormat)
+		}
+	}
+
+	// Validate color mode
+	if c.Output.ColorMode != "" {
+		validColorModes := map[string]bool{
+			"auto":   true,
+			"always": true,
+			"never":  true,
+		}
+		if !validColorModes[c.Output.ColorMode] {
+			return fmt.Errorf("invalid color mode: %s (must be one of: auto, always, never)", c.Output.ColorMode)
+		}
+	}
+
+	// Validate numeric values
+	if c.Analysis.MaxEntries < 1 {
+		return fmt.Errorf("max_entries must be greater than 0")
+	}
+	if c.Analysis.TimelineBuckets < 1 {
+		return fmt.Errorf("timeline_buckets must be greater than 0")
+	}
+	if c.Analysis.BufferSize < 1 {
+		return fmt.Errorf("buffer_size must be greater than 0")
+	}
+	if c.Analysis.MaxLineLength < 1 {
+		return fmt.Errorf("max_line_length must be greater than 0")
+	}
+	if c.AI.MaxRetries < 0 {
+		return fmt.Errorf("max_retries must be non-negative")
+	}
+
+	return nil
 }

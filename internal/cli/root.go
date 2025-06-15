@@ -2,9 +2,11 @@ package cli
 
 import (
 	"fmt"
+	"os"
 	"runtime"
 
 	"github.com/spf13/cobra"
+	"github.com/yildizm/LogSum/internal/config"
 	"github.com/yildizm/LogSum/internal/emoji"
 )
 
@@ -14,6 +16,9 @@ var (
 	noColor   bool
 	noEmoji   bool
 	outputFmt string
+
+	// Global config instance
+	globalConfig *config.Config
 )
 
 // NewRootCommand creates the root command
@@ -27,6 +32,36 @@ identifies anomalies, and provides insights from your log data.
 It supports multiple log formats (JSON, logfmt, plain text) and can analyze logs
 from files or stdin with real-time monitoring capabilities.`,
 		PersistentPreRun: func(cmd *cobra.Command, args []string) {
+			// Load configuration
+			loader := config.NewLoader()
+			cfg, err := loader.LoadConfig(cfgFile)
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "Warning: Failed to load config: %v\n", err)
+				cfg = config.DefaultConfig()
+			}
+			globalConfig = cfg
+
+			// Override config with command line flags if they were explicitly set
+			if cmd.Flag("verbose").Changed {
+				globalConfig.Output.Verbose = verbose
+			} else {
+				verbose = globalConfig.Output.Verbose
+			}
+
+			if cmd.Flag("output").Changed {
+				globalConfig.Output.DefaultFormat = outputFmt
+			} else {
+				outputFmt = globalConfig.Output.DefaultFormat
+			}
+
+			if cmd.Flag("no-color").Changed {
+				if noColor {
+					globalConfig.Output.ColorMode = "never"
+				}
+			} else {
+				noColor = globalConfig.Output.ColorMode == "never"
+			}
+
 			// Auto-disable emojis on Windows if not explicitly set
 			if runtime.GOOS == "windows" && !cmd.Flag("no-emoji").Changed {
 				noEmoji = true
@@ -47,6 +82,7 @@ from files or stdin with real-time monitoring capabilities.`,
 	rootCmd.AddCommand(newAnalyzeCommand())
 	rootCmd.AddCommand(newPatternsCommand())
 	rootCmd.AddCommand(newWatchCommand())
+	rootCmd.AddCommand(newConfigCommand())
 	rootCmd.AddCommand(newVersionCommand(version, commit, date))
 
 	return rootCmd
@@ -90,4 +126,12 @@ func getOutputFormat() string {
 
 func isEmojiDisabled() bool {
 	return noEmoji
+}
+
+// GetGlobalConfig returns the loaded global configuration
+func GetGlobalConfig() *config.Config {
+	if globalConfig == nil {
+		return config.DefaultConfig()
+	}
+	return globalConfig
 }

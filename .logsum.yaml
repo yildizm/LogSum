@@ -1,0 +1,20 @@
+# LogSum Configuration File (Minimal)
+version: "1.0"
+
+# Basic pattern configuration
+patterns:
+  directories:
+    - "./patterns"
+  enable_defaults: true
+
+# AI configuration (optional)
+# ai:
+#   provider: "ollama"
+#   model: "llama3.2"
+#   endpoint: "http://localhost:11434"
+
+# Output preferences
+output:
+  default_format: "text"
+  color_mode: "auto"
+  verbose: false
