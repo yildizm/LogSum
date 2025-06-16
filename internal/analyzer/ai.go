@@ -11,10 +11,17 @@ import (
 	"github.com/yildizm/LogSum/internal/common"
 )
 
+// DocumentCorrelator is an interface for correlating analysis results with documentation
+type DocumentCorrelator interface {
+	Correlate(ctx context.Context, analysis *common.Analysis) (interface{}, error)
+	SetDocumentStore(store interface{}) error
+}
+
 // AIAnalyzer wraps the base analyzer with AI capabilities
 type AIAnalyzer struct {
 	baseAnalyzer Analyzer
 	options      *AIAnalyzerOptions
+	correlator   DocumentCorrelator
 }
 
 // NewAIAnalyzer creates a new AI-enhanced analyzer
@@ -26,6 +33,8 @@ func NewAIAnalyzer(baseAnalyzer Analyzer, options *AIAnalyzerOptions) *AIAnalyze
 			EnableRootCauseAnalysis: true,
 			EnableRecommendations:   true,
 			IncludeContext:          true,
+			EnableDocumentContext:   false, // Optional by default
+			MaxContextTokens:        1000,
 			MinConfidence:           0.6,
 			MaxConcurrentRequests:   3,
 		}
@@ -34,7 +43,21 @@ func NewAIAnalyzer(baseAnalyzer Analyzer, options *AIAnalyzerOptions) *AIAnalyze
 	return &AIAnalyzer{
 		baseAnalyzer: baseAnalyzer,
 		options:      options,
+		correlator:   nil, // Will be set via SetCorrelator
 	}
+}
+
+// SetCorrelator sets the document correlator
+func (a *AIAnalyzer) SetCorrelator(correlator DocumentCorrelator) {
+	a.correlator = correlator
+}
+
+// SetDocumentStore configures the document store for context retrieval
+func (a *AIAnalyzer) SetDocumentStore(store interface{}) error {
+	if a.correlator == nil {
+		return fmt.Errorf("correlator not initialized")
+	}
+	return a.correlator.SetDocumentStore(store)
 }
 
 // AnalyzeWithAI performs enhanced analysis using AI
@@ -55,51 +78,117 @@ func (a *AIAnalyzer) AnalyzeWithAI(ctx context.Context, entries []*common.LogEnt
 		ProcessingTime: time.Since(startTime),
 	}
 
-	// Generate AI summary
-	summary, err := a.generateSummary(ctx, baseAnalysis, entries)
-	if err != nil {
-		return nil, fmt.Errorf("failed to generate AI summary: %w", err)
-	}
-	aiAnalysis.AISummary = summary
+	// Get document context for AI analysis
+	documentContext := a.getDocumentContext(ctx, baseAnalysis)
+	aiAnalysis.DocumentContext = documentContext
 
-	// Perform error analysis if enabled and errors exist
-	if a.options.EnableErrorAnalysis && baseAnalysis.ErrorCount > 0 {
-		errorAnalysis, err := a.analyzeErrors(ctx, baseAnalysis, entries)
-		if err != nil {
-			// Log error but don't fail the entire analysis
-			fmt.Printf("Error analysis failed: %v\n", err)
-		} else {
-			aiAnalysis.ErrorAnalysis = errorAnalysis
-		}
-	}
-
-	// Perform root cause analysis if enabled
-	if a.options.EnableRootCauseAnalysis {
-		rootCauses, err := a.identifyRootCauses(ctx, baseAnalysis, entries)
-		if err != nil {
-			fmt.Printf("Root cause analysis failed: %v\n", err)
-		} else {
-			aiAnalysis.RootCauses = rootCauses
-		}
-	}
-
-	// Generate recommendations if enabled
-	if a.options.EnableRecommendations {
-		recommendations, err := a.generateRecommendations(ctx, baseAnalysis, entries)
-		if err != nil {
-			fmt.Printf("Recommendation generation failed: %v\n", err)
-		} else {
-			aiAnalysis.Recommendations = recommendations
-		}
+	// Perform AI analysis tasks
+	if err := a.performAIAnalysis(ctx, aiAnalysis, baseAnalysis, entries, documentContext); err != nil {
+		return nil, err
 	}
 
 	aiAnalysis.ProcessingTime = time.Since(startTime)
 	return aiAnalysis, nil
 }
 
+// getDocumentContext retrieves document context for AI analysis
+func (a *AIAnalyzer) getDocumentContext(ctx context.Context, baseAnalysis *common.Analysis) *DocumentContext {
+	if !a.options.EnableDocumentContext || a.correlator == nil {
+		return nil
+	}
+
+	correlationResult, err := a.correlator.Correlate(ctx, baseAnalysis)
+	if err != nil || correlationResult == nil {
+		return nil
+	}
+
+	return a.buildDocumentContext(correlationResult)
+}
+
+// performAIAnalysis executes all AI analysis tasks
+func (a *AIAnalyzer) performAIAnalysis(ctx context.Context, aiAnalysis *AIAnalysis, baseAnalysis *common.Analysis, entries []*common.LogEntry, documentContext *DocumentContext) error {
+	// Generate AI summary
+	summary, err := a.generateSummary(ctx, baseAnalysis, entries, documentContext)
+	if err != nil {
+		return fmt.Errorf("failed to generate AI summary: %w", err)
+	}
+	aiAnalysis.AISummary = summary
+
+	// Perform error analysis
+	a.performErrorAnalysis(ctx, aiAnalysis, baseAnalysis, entries, documentContext)
+
+	// Perform root cause analysis
+	a.performRootCauseAnalysis(ctx, aiAnalysis, baseAnalysis, entries, documentContext)
+
+	// Generate recommendations
+	a.performRecommendationAnalysis(ctx, aiAnalysis, baseAnalysis, entries, documentContext)
+
+	return nil
+}
+
+// performErrorAnalysis handles error analysis with source citations
+func (a *AIAnalyzer) performErrorAnalysis(ctx context.Context, aiAnalysis *AIAnalysis, baseAnalysis *common.Analysis, entries []*common.LogEntry, documentContext *DocumentContext) {
+	if !a.options.EnableErrorAnalysis || baseAnalysis.ErrorCount == 0 {
+		return
+	}
+
+	errorAnalysis, err := a.analyzeErrors(ctx, baseAnalysis, entries, documentContext)
+	if err != nil {
+		fmt.Printf("Error analysis failed: %v\n", err)
+		return
+	}
+
+	if documentContext != nil {
+		errorAnalysis.SourceCitations = a.extractCitations(documentContext)
+	}
+	aiAnalysis.ErrorAnalysis = errorAnalysis
+}
+
+// performRootCauseAnalysis handles root cause analysis with source citations
+func (a *AIAnalyzer) performRootCauseAnalysis(ctx context.Context, aiAnalysis *AIAnalysis, baseAnalysis *common.Analysis, entries []*common.LogEntry, documentContext *DocumentContext) {
+	if !a.options.EnableRootCauseAnalysis {
+		return
+	}
+
+	rootCauses, err := a.identifyRootCauses(ctx, baseAnalysis, entries, documentContext)
+	if err != nil {
+		fmt.Printf("Root cause analysis failed: %v\n", err)
+		return
+	}
+
+	if documentContext != nil {
+		citations := a.extractCitations(documentContext)
+		for i := range rootCauses {
+			rootCauses[i].SourceCitations = citations
+		}
+	}
+	aiAnalysis.RootCauses = rootCauses
+}
+
+// performRecommendationAnalysis handles recommendation generation with source citations
+func (a *AIAnalyzer) performRecommendationAnalysis(ctx context.Context, aiAnalysis *AIAnalysis, baseAnalysis *common.Analysis, entries []*common.LogEntry, documentContext *DocumentContext) {
+	if !a.options.EnableRecommendations {
+		return
+	}
+
+	recommendations, err := a.generateRecommendations(ctx, baseAnalysis, entries, documentContext)
+	if err != nil {
+		fmt.Printf("Recommendation generation failed: %v\n", err)
+		return
+	}
+
+	if documentContext != nil {
+		citations := a.extractCitations(documentContext)
+		for i := range recommendations {
+			recommendations[i].SourceCitations = citations
+		}
+	}
+	aiAnalysis.Recommendations = recommendations
+}
+
 // generateSummary creates an AI-generated summary of the analysis
-func (a *AIAnalyzer) generateSummary(ctx context.Context, analysis *Analysis, entries []*common.LogEntry) (string, error) {
-	prompt := a.buildSummaryPrompt(analysis, entries)
+func (a *AIAnalyzer) generateSummary(ctx context.Context, analysis *common.Analysis, entries []*common.LogEntry, docContext *DocumentContext) (string, error) {
+	prompt := a.buildSummaryPrompt(analysis, entries, docContext)
 
 	req := &ai.CompletionRequest{
 		Prompt:       prompt,
@@ -120,13 +209,13 @@ func (a *AIAnalyzer) generateSummary(ctx context.Context, analysis *Analysis, en
 }
 
 // analyzeErrors performs detailed AI analysis of errors
-func (a *AIAnalyzer) analyzeErrors(ctx context.Context, analysis *Analysis, entries []*common.LogEntry) (*ErrorAnalysis, error) {
+func (a *AIAnalyzer) analyzeErrors(ctx context.Context, analysis *common.Analysis, entries []*common.LogEntry, docContext *DocumentContext) (*ErrorAnalysis, error) {
 	errorEntries := a.extractErrorEntries(entries)
 	if len(errorEntries) == 0 {
 		return nil, nil
 	}
 
-	prompt := a.buildErrorAnalysisPrompt(errorEntries, analysis)
+	prompt := a.buildErrorAnalysisPrompt(errorEntries, analysis, docContext)
 
 	req := &ai.CompletionRequest{
 		Prompt:       prompt,
@@ -157,12 +246,12 @@ func (a *AIAnalyzer) analyzeErrors(ctx context.Context, analysis *Analysis, entr
 }
 
 // identifyRootCauses uses AI to identify potential root causes
-func (a *AIAnalyzer) identifyRootCauses(ctx context.Context, analysis *Analysis, entries []*common.LogEntry) ([]RootCause, error) {
+func (a *AIAnalyzer) identifyRootCauses(ctx context.Context, analysis *common.Analysis, entries []*common.LogEntry, docContext *DocumentContext) ([]RootCause, error) {
 	if analysis.ErrorCount == 0 {
 		return nil, nil
 	}
 
-	prompt := a.buildRootCausePrompt(analysis, entries)
+	prompt := a.buildRootCausePrompt(analysis, entries, docContext)
 
 	req := &ai.CompletionRequest{
 		Prompt:       prompt,
@@ -184,9 +273,9 @@ func (a *AIAnalyzer) identifyRootCauses(ctx context.Context, analysis *Analysis,
 
 	// Filter by confidence threshold
 	filtered := make([]RootCause, 0)
-	for _, rc := range rootCauses {
-		if rc.Confidence >= a.options.MinConfidence {
-			filtered = append(filtered, rc)
+	for i := range rootCauses {
+		if rootCauses[i].Confidence >= a.options.MinConfidence {
+			filtered = append(filtered, rootCauses[i])
 		}
 	}
 
@@ -194,8 +283,8 @@ func (a *AIAnalyzer) identifyRootCauses(ctx context.Context, analysis *Analysis,
 }
 
 // generateRecommendations creates actionable recommendations
-func (a *AIAnalyzer) generateRecommendations(ctx context.Context, analysis *Analysis, entries []*common.LogEntry) ([]Recommendation, error) {
-	prompt := a.buildRecommendationPrompt(analysis, entries)
+func (a *AIAnalyzer) generateRecommendations(ctx context.Context, analysis *common.Analysis, entries []*common.LogEntry, docContext *DocumentContext) ([]Recommendation, error) {
+	prompt := a.buildRecommendationPrompt(analysis, entries, docContext)
 
 	req := &ai.CompletionRequest{
 		Prompt:       prompt,
@@ -219,7 +308,7 @@ func (a *AIAnalyzer) generateRecommendations(ctx context.Context, analysis *Anal
 
 // Helper methods for building prompts
 
-func (a *AIAnalyzer) buildSummaryPrompt(analysis *Analysis, entries []*common.LogEntry) string {
+func (a *AIAnalyzer) buildSummaryPrompt(analysis *common.Analysis, entries []*common.LogEntry, docContext *DocumentContext) string {
 	var builder strings.Builder
 
 	builder.WriteString("Analyze this log summary and provide a concise overview:\n\n")
@@ -247,12 +336,21 @@ func (a *AIAnalyzer) buildSummaryPrompt(analysis *Analysis, entries []*common.Lo
 		}
 	}
 
+	// Add document context if available
+	if docContext != nil && len(docContext.CorrelatedDocuments) > 0 {
+		contextSection := a.buildContextSection(docContext)
+		if contextSection != "" {
+			builder.WriteString("\n\n")
+			builder.WriteString(contextSection)
+		}
+	}
+
 	builder.WriteString("\nProvide a 2-3 sentence summary focusing on the most critical findings and overall system health.")
 
 	return builder.String()
 }
 
-func (a *AIAnalyzer) buildErrorAnalysisPrompt(errorEntries []*common.LogEntry, analysis *Analysis) string {
+func (a *AIAnalyzer) buildErrorAnalysisPrompt(errorEntries []*common.LogEntry, analysis *common.Analysis, docContext *DocumentContext) string {
 	var builder strings.Builder
 
 	builder.WriteString("Analyze these error logs and provide structured insights in JSON format:\n\n")
@@ -273,12 +371,21 @@ func (a *AIAnalyzer) buildErrorAnalysisPrompt(errorEntries []*common.LogEntry, a
 		analysis.StartTime.Format(time.RFC3339),
 		analysis.EndTime.Format(time.RFC3339)))
 
+	// Add document context if available
+	if docContext != nil && len(docContext.CorrelatedDocuments) > 0 {
+		contextSection := a.buildContextSection(docContext)
+		if contextSection != "" {
+			builder.WriteString("\n\n")
+			builder.WriteString(contextSection)
+		}
+	}
+
 	builder.WriteString("\nProvide JSON response with: summary, critical_errors[], error_patterns[], severity_breakdown{}")
 
 	return builder.String()
 }
 
-func (a *AIAnalyzer) buildRootCausePrompt(analysis *Analysis, entries []*common.LogEntry) string {
+func (a *AIAnalyzer) buildRootCausePrompt(analysis *common.Analysis, entries []*common.LogEntry, docContext *DocumentContext) string {
 	var builder strings.Builder
 
 	builder.WriteString("Identify potential root causes from this log analysis. Respond in JSON format:\n\n")
@@ -308,12 +415,21 @@ func (a *AIAnalyzer) buildRootCausePrompt(analysis *Analysis, entries []*common.
 		}
 	}
 
+	// Add document context if available
+	if docContext != nil && len(docContext.CorrelatedDocuments) > 0 {
+		contextSection := a.buildContextSection(docContext)
+		if contextSection != "" {
+			builder.WriteString("\n\n")
+			builder.WriteString(contextSection)
+		}
+	}
+
 	builder.WriteString("\nProvide JSON array of root causes with: title, description, confidence (0-1), category, impact")
 
 	return builder.String()
 }
 
-func (a *AIAnalyzer) buildRecommendationPrompt(analysis *Analysis, entries []*common.LogEntry) string {
+func (a *AIAnalyzer) buildRecommendationPrompt(analysis *common.Analysis, entries []*common.LogEntry, docContext *DocumentContext) string {
 	var builder strings.Builder
 
 	builder.WriteString("Based on this log analysis, provide actionable recommendations in JSON format:\n\n")
@@ -328,9 +444,94 @@ func (a *AIAnalyzer) buildRecommendationPrompt(analysis *Analysis, entries []*co
 		}
 	}
 
+	// Add document context if available
+	if docContext != nil && len(docContext.CorrelatedDocuments) > 0 {
+		contextSection := a.buildContextSection(docContext)
+		if contextSection != "" {
+			builder.WriteString("\n\n")
+			builder.WriteString(contextSection)
+		}
+	}
+
 	builder.WriteString("\nProvide JSON array of recommendations with: title, description, priority, category, action_items[], effort")
 
 	return builder.String()
+}
+
+// buildDocumentContext creates DocumentContext from correlation results
+func (a *AIAnalyzer) buildDocumentContext(correlationResult interface{}) *DocumentContext {
+	// This is a simple implementation that assumes the correlation result
+	// is in the expected format. In a real implementation, you would
+	// need to properly type-assert and convert the correlation result
+	// to DocumentContext format.
+
+	// For now, return nil to maintain compatibility
+	// This method should be implemented based on the actual correlation
+	// result structure from the correlation package
+	return nil
+}
+
+// buildContextSection creates the context section for prompts
+func (a *AIAnalyzer) buildContextSection(docContext *DocumentContext) string {
+	if docContext == nil || len(docContext.CorrelatedDocuments) == 0 {
+		return ""
+	}
+
+	var builder strings.Builder
+	builder.WriteString("Context: Relevant Documentation\n")
+	builder.WriteString("===============================\n")
+
+	for i, doc := range docContext.CorrelatedDocuments {
+		if i >= 3 { // Limit to top 3 for brevity
+			break
+		}
+
+		builder.WriteString(fmt.Sprintf("\n[%d] %s (Score: %.2f)\n", i+1, doc.Title, doc.Score))
+		if doc.RelevantSection != "" {
+			builder.WriteString(fmt.Sprintf("Section: %s\n", doc.RelevantSection))
+		}
+		if len(doc.MatchedKeywords) > 0 {
+			builder.WriteString(fmt.Sprintf("Keywords: %s\n", strings.Join(doc.MatchedKeywords, ", ")))
+		}
+		builder.WriteString(fmt.Sprintf("Content: %s\n", doc.Excerpt))
+		builder.WriteString(fmt.Sprintf("Source: %s\n", doc.Path))
+	}
+
+	if docContext.TruncatedContext {
+		builder.WriteString("\n[Note: Additional relevant documentation was found but truncated for brevity]\n")
+	}
+
+	return builder.String()
+}
+
+// limitText truncates text to specified character limit
+func (a *AIAnalyzer) limitText(text string, limit int) string {
+	if len(text) <= limit {
+		return text
+	}
+	return text[:limit] + "..."
+}
+
+// extractCitations converts document context to source citations
+func (a *AIAnalyzer) extractCitations(docContext *DocumentContext) []SourceCitation {
+	if docContext == nil || len(docContext.CorrelatedDocuments) == 0 {
+		return nil
+	}
+
+	citations := make([]SourceCitation, 0, len(docContext.CorrelatedDocuments))
+
+	for _, doc := range docContext.CorrelatedDocuments {
+		citation := SourceCitation{
+			DocumentTitle: doc.Title,
+			DocumentPath:  doc.Path,
+			Section:       doc.RelevantSection,
+			Relevance:     doc.Score,
+			Quote:         a.limitText(doc.Excerpt, 150), // Shorter quote for citations
+		}
+		citations = append(citations, citation)
+	}
+
+	return citations
 }
 
 func (a *AIAnalyzer) extractErrorEntries(entries []*common.LogEntry) []*common.LogEntry {

@@ -229,7 +229,7 @@ func TestGenerateSummary(t *testing.T) {
 
 	aiAnalyzer := NewAIAnalyzer(NewEngine(), options)
 
-	analysis := &Analysis{
+	analysis := &common.Analysis{
 		StartTime:    time.Now().Add(-1 * time.Hour),
 		EndTime:      time.Now(),
 		TotalEntries: 100,
@@ -237,7 +237,7 @@ func TestGenerateSummary(t *testing.T) {
 		WarnCount:    10,
 	}
 
-	summary, err := aiAnalyzer.generateSummary(context.Background(), analysis, createTestLogEntries())
+	summary, err := aiAnalyzer.generateSummary(context.Background(), analysis, createTestLogEntries(), nil)
 	if err != nil {
 		t.Fatalf("Expected no error, got %v", err)
 	}
@@ -271,19 +271,19 @@ func TestExtractErrorEntries(t *testing.T) {
 func TestBuildSummaryPrompt(t *testing.T) {
 	aiAnalyzer := NewAIAnalyzer(NewEngine(), nil)
 
-	analysis := &Analysis{
+	analysis := &common.Analysis{
 		StartTime:    time.Now().Add(-1 * time.Hour),
 		EndTime:      time.Now(),
 		TotalEntries: 100,
 		ErrorCount:   5,
 		WarnCount:    10,
-		Patterns: []PatternMatch{
+		Patterns: []common.PatternMatch{
 			{
 				Pattern: &common.Pattern{Name: "Database Error"},
 				Count:   3,
 			},
 		},
-		Insights: []Insight{
+		Insights: []common.Insight{
 			{
 				Title:       "High Error Rate",
 				Description: "Error rate increased by 50%",
@@ -291,7 +291,7 @@ func TestBuildSummaryPrompt(t *testing.T) {
 		},
 	}
 
-	prompt := aiAnalyzer.buildSummaryPrompt(analysis, createTestLogEntries())
+	prompt := aiAnalyzer.buildSummaryPrompt(analysis, createTestLogEntries(), nil)
 
 	if prompt == "" {
 		t.Error("Expected non-empty prompt")
@@ -320,13 +320,13 @@ func TestBuildErrorAnalysisPrompt(t *testing.T) {
 	entries := createTestLogEntries()
 	errorEntries := aiAnalyzer.extractErrorEntries(entries)
 
-	analysis := &Analysis{
+	analysis := &common.Analysis{
 		StartTime:  time.Now().Add(-1 * time.Hour),
 		EndTime:    time.Now(),
 		ErrorCount: 2,
 	}
 
-	prompt := aiAnalyzer.buildErrorAnalysisPrompt(errorEntries, analysis)
+	prompt := aiAnalyzer.buildErrorAnalysisPrompt(errorEntries, analysis, nil)
 
 	if prompt == "" {
 		t.Error("Expected non-empty prompt")
@@ -359,12 +359,12 @@ func TestAnalyzeErrorsWithJSONResponse(t *testing.T) {
 
 	aiAnalyzer := NewAIAnalyzer(NewEngine(), options)
 
-	analysis := &Analysis{
+	analysis := &common.Analysis{
 		ErrorCount: 2,
 		WarnCount:  1,
 	}
 
-	errorAnalysis, err := aiAnalyzer.analyzeErrors(context.Background(), analysis, createTestLogEntries())
+	errorAnalysis, err := aiAnalyzer.analyzeErrors(context.Background(), analysis, createTestLogEntries(), nil)
 	if err != nil {
 		t.Fatalf("Expected no error, got %v", err)
 	}
@@ -436,11 +436,11 @@ func TestIdentifyRootCauses(t *testing.T) {
 
 	aiAnalyzer := NewAIAnalyzer(NewEngine(), options)
 
-	analysis := &Analysis{
+	analysis := &common.Analysis{
 		ErrorCount: 2,
 	}
 
-	rootCauses, err := aiAnalyzer.identifyRootCauses(context.Background(), analysis, createTestLogEntries())
+	rootCauses, err := aiAnalyzer.identifyRootCauses(context.Background(), analysis, createTestLogEntries(), nil)
 	if err != nil {
 		t.Fatalf("Expected no error, got %v", err)
 	}
@@ -488,12 +488,12 @@ func TestGenerateRecommendations(t *testing.T) {
 
 	aiAnalyzer := NewAIAnalyzer(NewEngine(), options)
 
-	analysis := &Analysis{
+	analysis := &common.Analysis{
 		ErrorCount: 2,
 		WarnCount:  1,
 	}
 
-	recommendations, err := aiAnalyzer.generateRecommendations(context.Background(), analysis, createTestLogEntries())
+	recommendations, err := aiAnalyzer.generateRecommendations(context.Background(), analysis, createTestLogEntries(), nil)
 	if err != nil {
 		t.Fatalf("Expected no error, got %v", err)
 	}
@@ -516,4 +516,122 @@ func TestGenerateRecommendations(t *testing.T) {
 			t.Errorf("Expected 2 action items, got %d", len(rec.ActionItems))
 		}
 	}
+}
+
+func TestDocumentContextIntegration(t *testing.T) {
+	mockProvider := &MockProvider{
+		name: "test-provider",
+		completionFunc: func(ctx context.Context, req *ai.CompletionRequest) (*ai.CompletionResponse, error) {
+			// Check if the prompt contains context section
+			if !contains(req.Prompt, "Context: Relevant Documentation") {
+				t.Errorf("Expected prompt to contain document context, but it didn't")
+			}
+
+			return &ai.CompletionResponse{
+				Content:      "Analysis with document context",
+				FinishReason: "stop",
+				Usage: &ai.TokenUsage{
+					TotalTokens: 20,
+				},
+			}, nil
+		},
+	}
+
+	options := &AIAnalyzerOptions{
+		Provider:              mockProvider,
+		EnableDocumentContext: true,
+		MaxContextTokens:      1000,
+	}
+
+	aiAnalyzer := NewAIAnalyzer(NewEngine(), options)
+
+	// Create a mock document context
+	docContext := &DocumentContext{
+		CorrelatedDocuments: []ContextDocument{
+			{
+				Title:           "Database Troubleshooting Guide",
+				Path:            "/docs/database.md",
+				MatchedKeywords: []string{"connection", "timeout"},
+				Score:           0.85,
+				Excerpt:         "When facing database connection issues, check the connection pool settings...",
+				RelevantSection: "Connection Pool Configuration",
+			},
+		},
+		TotalDocuments:   1,
+		TokensUsed:       50,
+		TruncatedContext: false,
+	}
+
+	analysis := &common.Analysis{
+		StartTime:    time.Now().Add(-1 * time.Hour),
+		EndTime:      time.Now(),
+		TotalEntries: 100,
+		ErrorCount:   5,
+		WarnCount:    10,
+	}
+
+	// Test that buildContextSection works correctly
+	contextSection := aiAnalyzer.buildContextSection(docContext)
+	if contextSection == "" {
+		t.Error("Expected non-empty context section")
+	}
+
+	if !contains(contextSection, "Database Troubleshooting Guide") {
+		t.Error("Expected context section to contain document title")
+	}
+
+	if !contains(contextSection, "Score: 0.85") {
+		t.Error("Expected context section to contain relevance score")
+	}
+
+	// Test that citations are extracted correctly
+	citations := aiAnalyzer.extractCitations(docContext)
+	if len(citations) != 1 {
+		t.Errorf("Expected 1 citation, got %d", len(citations))
+	}
+
+	if len(citations) > 0 {
+		citation := citations[0]
+		if citation.DocumentTitle != "Database Troubleshooting Guide" {
+			t.Errorf("Expected citation title to match, got %s", citation.DocumentTitle)
+		}
+		if citation.Relevance != 0.85 {
+			t.Errorf("Expected citation relevance to be 0.85, got %f", citation.Relevance)
+		}
+	}
+
+	// Test that summary generation includes context
+	summary, err := aiAnalyzer.generateSummary(context.Background(), analysis, createTestLogEntries(), docContext)
+	if err != nil {
+		t.Fatalf("Expected no error, got %v", err)
+	}
+
+	if summary != "Analysis with document context" {
+		t.Errorf("Expected summary to include document context, got %s", summary)
+	}
+}
+
+func TestBuildDocumentContext(t *testing.T) {
+	aiAnalyzer := NewAIAnalyzer(NewEngine(), &AIAnalyzerOptions{
+		MaxContextTokens: 1000,
+	})
+
+	// Test with nil correlation result
+	docContext := aiAnalyzer.buildDocumentContext(nil)
+	if docContext != nil {
+		t.Error("Expected nil document context for nil correlation result")
+	}
+
+	// TODO: Re-enable after resolving import cycle with correlation package
+	// Test with empty correlations
+	// emptyResult := &correlation.CorrelationResult{
+	//     TotalPatterns:      0,
+	//     CorrelatedPatterns: 0,
+	//     Correlations:       []*correlation.PatternCorrelation{},
+	// }
+	//
+	// docContext = aiAnalyzer.buildDocumentContext(emptyResult)
+	// if docContext != nil {
+	//     t.Error("Expected nil document context for empty correlations")
+	// }
 }

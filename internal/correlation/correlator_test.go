@@ -5,7 +5,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/yildizm/LogSum/internal/analyzer"
 	"github.com/yildizm/LogSum/internal/common"
 	"github.com/yildizm/LogSum/internal/docstore"
 	"github.com/yildizm/go-logparser"
@@ -47,8 +46,8 @@ func TestCorrelator(t *testing.T) {
 	}
 
 	// Create test analysis with patterns
-	analysis := &analyzer.Analysis{
-		Patterns: []analyzer.PatternMatch{
+	analysis := &common.Analysis{
+		Patterns: []common.PatternMatch{
 			{
 				Pattern: &common.Pattern{
 					ID:          "db_timeout",

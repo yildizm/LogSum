@@ -5,14 +5,14 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/yildizm/LogSum/internal/analyzer"
+	"github.com/yildizm/LogSum/internal/common"
 	"github.com/yildizm/LogSum/internal/docstore"
 )
 
 // Correlator connects error patterns with documentation
 type Correlator interface {
 	// Correlate finds documentation relevant to error patterns
-	Correlate(ctx context.Context, analysis *analyzer.Analysis) (*CorrelationResult, error)
+	Correlate(ctx context.Context, analysis *common.Analysis) (*CorrelationResult, error)
 
 	// SetDocumentStore sets the document store for searching
 	SetDocumentStore(store docstore.DocumentStore) error
@@ -41,7 +41,7 @@ func (c *correlator) SetDocumentStore(store docstore.DocumentStore) error {
 }
 
 // Correlate finds documentation relevant to error patterns
-func (c *correlator) Correlate(ctx context.Context, analysis *analyzer.Analysis) (*CorrelationResult, error) {
+func (c *correlator) Correlate(ctx context.Context, analysis *common.Analysis) (*CorrelationResult, error) {
 	if c.docStore == nil {
 		return nil, fmt.Errorf("document store not configured")
 	}
@@ -72,7 +72,7 @@ func (c *correlator) Correlate(ctx context.Context, analysis *analyzer.Analysis)
 }
 
 // correlatePattern correlates a single pattern with documentation
-func (c *correlator) correlatePattern(ctx context.Context, patternMatch *analyzer.PatternMatch) (*PatternCorrelation, error) {
+func (c *correlator) correlatePattern(ctx context.Context, patternMatch *common.PatternMatch) (*PatternCorrelation, error) {
 	// Extract keywords from the pattern and matches
 	keywords := c.extractor.ExtractFromPattern(patternMatch.Pattern)
 

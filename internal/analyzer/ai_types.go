@@ -18,6 +18,9 @@ type AIAnalysis struct {
 	RootCauses      []RootCause      `json:"root_causes,omitempty"`
 	Recommendations []Recommendation `json:"recommendations,omitempty"`
 
+	// Document context
+	DocumentContext *DocumentContext `json:"document_context,omitempty"`
+
 	// Analysis metadata
 	AnalyzedAt     time.Time      `json:"analyzed_at"`
 	Provider       string         `json:"provider"`
@@ -33,6 +36,7 @@ type ErrorAnalysis struct {
 	ErrorPatterns     []ErrorPattern    `json:"error_patterns"`
 	CorrelatedEvents  []CorrelatedEvent `json:"correlated_events,omitempty"`
 	SeverityBreakdown map[string]int    `json:"severity_breakdown"`
+	SourceCitations   []SourceCitation  `json:"source_citations,omitempty"`
 }
 
 // ErrorInsight represents AI analysis of a specific error
@@ -60,25 +64,27 @@ type ErrorPattern struct {
 
 // RootCause represents an AI-identified root cause
 type RootCause struct {
-	Title       string             `json:"title"`
-	Description string             `json:"description"`
-	Confidence  float64            `json:"confidence"`
-	Evidence    []*common.LogEntry `json:"evidence"`
-	Category    RootCauseCategory  `json:"category"`
-	Impact      ImpactLevel        `json:"impact"`
-	Timeline    []time.Time        `json:"timeline,omitempty"`
+	Title           string             `json:"title"`
+	Description     string             `json:"description"`
+	Confidence      float64            `json:"confidence"`
+	Evidence        []*common.LogEntry `json:"evidence"`
+	Category        RootCauseCategory  `json:"category"`
+	Impact          ImpactLevel        `json:"impact"`
+	Timeline        []time.Time        `json:"timeline,omitempty"`
+	SourceCitations []SourceCitation   `json:"source_citations,omitempty"`
 }
 
 // Recommendation represents an AI-generated recommendation
 type Recommendation struct {
-	Title         string                 `json:"title"`
-	Description   string                 `json:"description"`
-	Priority      RecommendationPriority `json:"priority"`
-	Category      RecommendationCategory `json:"category"`
-	ActionItems   []string               `json:"action_items"`
-	Benefits      []string               `json:"benefits"`
-	Effort        EffortLevel            `json:"effort"`
-	RelatedIssues []string               `json:"related_issues,omitempty"`
+	Title           string                 `json:"title"`
+	Description     string                 `json:"description"`
+	Priority        RecommendationPriority `json:"priority"`
+	Category        RecommendationCategory `json:"category"`
+	ActionItems     []string               `json:"action_items"`
+	Benefits        []string               `json:"benefits"`
+	Effort          EffortLevel            `json:"effort"`
+	RelatedIssues   []string               `json:"related_issues,omitempty"`
+	SourceCitations []SourceCitation       `json:"source_citations,omitempty"`
 }
 
 // CorrelatedEvent represents events that correlate with errors
@@ -158,6 +164,33 @@ const (
 	EffortSignificant EffortLevel = "significant"
 )
 
+// DocumentContext contains relevant documentation context for AI analysis
+type DocumentContext struct {
+	CorrelatedDocuments []ContextDocument `json:"correlated_documents"`
+	TotalDocuments      int               `json:"total_documents"`
+	TokensUsed          int               `json:"tokens_used"`
+	TruncatedContext    bool              `json:"truncated_context"`
+}
+
+// ContextDocument represents a document used for AI context
+type ContextDocument struct {
+	Title           string   `json:"title"`
+	Path            string   `json:"path"`
+	MatchedKeywords []string `json:"matched_keywords"`
+	Score           float64  `json:"score"`
+	Excerpt         string   `json:"excerpt"`
+	RelevantSection string   `json:"relevant_section,omitempty"`
+}
+
+// SourceCitation represents a citation to source documentation
+type SourceCitation struct {
+	DocumentTitle string  `json:"document_title"`
+	DocumentPath  string  `json:"document_path"`
+	Section       string  `json:"section,omitempty"`
+	Relevance     float64 `json:"relevance"`
+	Quote         string  `json:"quote,omitempty"`
+}
+
 // AIAnalyzerOptions configures the AI analyzer
 type AIAnalyzerOptions struct {
 	// Provider to use for AI analysis
@@ -177,6 +210,12 @@ type AIAnalyzerOptions struct {
 
 	// IncludeContext includes additional context in AI requests
 	IncludeContext bool
+
+	// EnableDocumentContext enables document correlation and context
+	EnableDocumentContext bool
+
+	// MaxContextTokens limits the tokens used for document context
+	MaxContextTokens int
 
 	// MinConfidence sets minimum confidence threshold for results
 	MinConfidence float64
