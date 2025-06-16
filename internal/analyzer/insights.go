@@ -83,7 +83,7 @@ func (g *InsightGenerator) detectErrorSpikes(entries []*common.LogEntry, matches
 
 		if avgPreviousRate > 0 && currentRate/avgPreviousRate >= g.errorSpikeThreshold {
 			// Found an error spike
-			confidence := min(0.95, currentRate/avgPreviousRate/g.errorSpikeThreshold)
+			confidence := minFloat(0.95, currentRate/avgPreviousRate/g.errorSpikeThreshold)
 
 			insight := Insight{
 				Type:        InsightTypeErrorSpike,
@@ -286,7 +286,7 @@ func (g *InsightGenerator) calculatePatternConfidence(match *PatternMatch, total
 	frequency := float64(match.Count) / float64(totalEntries)
 
 	// Higher frequency patterns get higher confidence (up to a point)
-	freqScore := min(frequency*10, 0.8)
+	freqScore := minFloat(frequency*10, 0.8)
 
 	// Patterns with regex get slightly higher confidence
 	patternScore := 0.2
@@ -294,7 +294,7 @@ func (g *InsightGenerator) calculatePatternConfidence(match *PatternMatch, total
 		patternScore = 0.3
 	}
 
-	return min(freqScore+patternScore, 0.95)
+	return minFloat(freqScore+patternScore, 0.95)
 }
 
 func (g *InsightGenerator) getErrorEntries(entries []*common.LogEntry) []*common.LogEntry {
@@ -305,6 +305,21 @@ func (g *InsightGenerator) getErrorEntries(entries []*common.LogEntry) []*common
 		}
 	}
 	return g.limitEvidence(errorEntries, 5)
+}
+
+// Utility functions
+func minInt(a, b int) int {
+	if a < b {
+		return a
+	}
+	return b
+}
+
+func minFloat(a, b float64) float64 {
+	if a < b {
+		return a
+	}
+	return b
 }
 
 func (g *InsightGenerator) limitEvidence(entries []*common.LogEntry, limit int) []*common.LogEntry {

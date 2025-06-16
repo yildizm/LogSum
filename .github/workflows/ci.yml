@@ -12,18 +12,18 @@ jobs:
       matrix:
         go-version: ['1.24.4']
         os: [ubuntu-latest, macos-latest]
-    
+
     runs-on: ${{ matrix.os }}
-    
+
     steps:
     - name: Checkout code
       uses: actions/checkout@v4
-    
+
     - name: Setup Go
       uses: actions/setup-go@v5
       with:
         go-version: ${{ matrix.go-version }}
-    
+
     - name: Cache Go modules
       uses: actions/cache@v3
       with:
@@ -31,16 +31,27 @@ jobs:
         key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
         restore-keys: |
           ${{ runner.os }}-go-
-    
+
     - name: Download dependencies
       run: go mod download
-    
-    - name: Build
+
+    - name: Clean Go build and test cache
+      run: |
+        go clean -cache
+        go clean -testcache
+
+    - name: Build main binary
       run: go build -o logsum ./cmd/logsum
-    
-    - name: Test
-      run: go test -v ./...
-    
+
+    - name: Run unit tests (excluding examples)
+      run: go test -v $(go list ./... | grep -v /examples)
+
+    - name: Verify demo example compiles
+      run: go build ./examples/monitor_demo.go
+
+    - name: Run demo example (optional)
+      run: go run ./examples/monitor_demo.go
+
     - name: Run linter
       uses: golangci/golangci-lint-action@v8
       with:

@@ -53,5 +53,5 @@ demo.tape
 demo.gif
 
 # Generated reports (not committed examples)
-report.*
+examples/output/sample_report.*
 *.bak
