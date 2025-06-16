@@ -26,6 +26,9 @@ type DocumentMatch struct {
 	Score           float64            `json:"score"`
 	MatchedKeywords []string           `json:"matched_keywords"`
 	Highlighted     string             `json:"highlighted"`
+	KeywordScore    float64            `json:"keyword_score"`
+	VectorScore     float64            `json:"vector_score"`
+	SearchMethod    string             `json:"search_method"` // "keyword", "vector", or "hybrid"
 }
 
 // KeywordExtractionResult holds extracted keywords with metadata
@@ -33,4 +36,26 @@ type KeywordExtractionResult struct {
 	Keywords   []string `json:"keywords"`
 	Source     string   `json:"source"`
 	Confidence float64  `json:"confidence"`
+}
+
+// HybridSearchConfig configures the hybrid search behavior
+type HybridSearchConfig struct {
+	KeywordWeight  float64 `json:"keyword_weight"`   // Weight for keyword search results (0.0-1.0)
+	VectorWeight   float64 `json:"vector_weight"`    // Weight for vector search results (0.0-1.0)
+	MaxResults     int     `json:"max_results"`      // Maximum number of results to return
+	VectorTopK     int     `json:"vector_top_k"`     // Number of top vector results to retrieve
+	MinVectorScore float32 `json:"min_vector_score"` // Minimum vector similarity score
+	EnableVector   bool    `json:"enable_vector"`    // Whether to use vector search
+}
+
+// DefaultHybridSearchConfig returns default configuration for hybrid search
+func DefaultHybridSearchConfig() *HybridSearchConfig {
+	return &HybridSearchConfig{
+		KeywordWeight:  0.6,
+		VectorWeight:   0.4,
+		MaxResults:     5,
+		VectorTopK:     10,
+		MinVectorScore: 0.1,
+		EnableVector:   true,
+	}
 }
