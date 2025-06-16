@@ -207,3 +207,30 @@ type Finding struct {
 	// Tags for categorization
 	Tags []string `json:"tags,omitempty"`
 }
+
+// Model represents an AI model with provider-agnostic information
+type Model struct {
+	// ID is the unique identifier for the model
+	ID string `json:"id"`
+
+	// Name is the human-readable name of the model
+	Name string `json:"name"`
+
+	// Description provides details about the model
+	Description string `json:"description"`
+
+	// Provider is the name of the provider offering this model
+	Provider string `json:"provider"`
+
+	// MaxTokens is the maximum context window size for this model
+	MaxTokens int `json:"max_tokens"`
+
+	// CreatedAt is when the model was created (optional)
+	CreatedAt time.Time `json:"created_at,omitempty"`
+
+	// OwnedBy indicates who owns or maintains the model
+	OwnedBy string `json:"owned_by,omitempty"`
+
+	// Tags for categorization
+	Tags []string `json:"tags,omitempty"`
+}
