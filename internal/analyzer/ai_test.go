@@ -293,23 +293,25 @@ func TestBuildSummaryPrompt(t *testing.T) {
 
 	prompt := aiAnalyzer.buildSummaryPrompt(analysis, createTestLogEntries(), nil)
 
-	if prompt == "" {
-		t.Error("Expected non-empty prompt")
+	if prompt == nil {
+		t.Error("Expected non-nil prompt")
+		return
 	}
 
-	if !contains(prompt, "Total Entries: 100") {
+	promptText := prompt.String()
+	if !contains(promptText, "Total Entries: 100") {
 		t.Error("Expected prompt to contain total entries")
 	}
 
-	if !contains(prompt, "Errors: 5, Warnings: 10") {
+	if !contains(promptText, "Errors: 5, Warnings: 10") {
 		t.Error("Expected prompt to contain error and warning counts")
 	}
 
-	if !contains(prompt, "Database Error") {
+	if !contains(promptText, "Database Error") {
 		t.Error("Expected prompt to contain pattern name")
 	}
 
-	if !contains(prompt, "High Error Rate") {
+	if !contains(promptText, "High Error Rate") {
 		t.Error("Expected prompt to contain insight title")
 	}
 }
@@ -328,15 +330,17 @@ func TestBuildErrorAnalysisPrompt(t *testing.T) {
 
 	prompt := aiAnalyzer.buildErrorAnalysisPrompt(errorEntries, analysis, nil)
 
-	if prompt == "" {
-		t.Error("Expected non-empty prompt")
+	if prompt == nil {
+		t.Error("Expected non-nil prompt")
+		return
 	}
 
-	if !contains(prompt, "Total Errors: 2") {
+	promptText := prompt.String()
+	if !contains(promptText, "Total Errors: 2") {
 		t.Error("Expected prompt to contain error count")
 	}
 
-	if !contains(prompt, "Database connection failed") {
+	if !contains(promptText, "Database connection failed") {
 		t.Error("Expected prompt to contain sample error message")
 	}
 }

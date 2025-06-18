@@ -8,6 +8,7 @@ require (
 	github.com/fsnotify/fsnotify v1.9.0
 	github.com/spf13/cobra v1.9.1
 	github.com/yildizm/go-logparser v1.0.0
+	github.com/yildizm/go-promptfmt v1.0.0
 	github.com/yildizm/go-termfmt v1.0.0
 	gopkg.in/yaml.v3 v3.0.1
 )

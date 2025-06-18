@@ -2,13 +2,13 @@ package analyzer
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"strings"
 	"time"
 
 	"github.com/yildizm/LogSum/internal/ai"
 	"github.com/yildizm/LogSum/internal/common"
+	"github.com/yildizm/go-promptfmt"
 )
 
 // DocumentCorrelator is an interface for correlating analysis results with documentation
@@ -191,8 +191,8 @@ func (a *AIAnalyzer) generateSummary(ctx context.Context, analysis *common.Analy
 	prompt := a.buildSummaryPrompt(analysis, entries, docContext)
 
 	req := &ai.CompletionRequest{
-		Prompt:       prompt,
-		SystemPrompt: "You are a log analysis expert. Provide concise, actionable summaries of log analysis results.",
+		Prompt:       prompt.String(),
+		SystemPrompt: prompt.SystemPrompt,
 		MaxTokens:    500,
 		Temperature:  0.3,
 	}
@@ -218,8 +218,8 @@ func (a *AIAnalyzer) analyzeErrors(ctx context.Context, analysis *common.Analysi
 	prompt := a.buildErrorAnalysisPrompt(errorEntries, analysis, docContext)
 
 	req := &ai.CompletionRequest{
-		Prompt:       prompt,
-		SystemPrompt: "You are an expert in error analysis. Analyze log errors and provide structured insights in JSON format.",
+		Prompt:       prompt.String(),
+		SystemPrompt: prompt.SystemPrompt,
 		MaxTokens:    a.options.MaxTokensPerRequest,
 		Temperature:  0.2,
 	}
@@ -229,9 +229,11 @@ func (a *AIAnalyzer) analyzeErrors(ctx context.Context, analysis *common.Analysi
 		return nil, err
 	}
 
-	// Parse the JSON response
+	// Parse JSON response using go-promptfmt
+	response := promptfmt.NewResponse(resp.Content)
 	var errorAnalysis ErrorAnalysis
-	if err := json.Unmarshal([]byte(resp.Content), &errorAnalysis); err != nil {
+	parseResult := response.TryParseJSON(&errorAnalysis)
+	if !parseResult.Success {
 		// If JSON parsing fails, create a basic error analysis
 		return &ErrorAnalysis{
 			Summary: resp.Content,
@@ -254,8 +256,8 @@ func (a *AIAnalyzer) identifyRootCauses(ctx context.Context, analysis *common.An
 	prompt := a.buildRootCausePrompt(analysis, entries, docContext)
 
 	req := &ai.CompletionRequest{
-		Prompt:       prompt,
-		SystemPrompt: "You are a system reliability expert. Identify root causes of issues from log data and provide structured analysis in JSON format.",
+		Prompt:       prompt.String(),
+		SystemPrompt: prompt.SystemPrompt,
 		MaxTokens:    a.options.MaxTokensPerRequest,
 		Temperature:  0.3,
 	}
@@ -265,8 +267,11 @@ func (a *AIAnalyzer) identifyRootCauses(ctx context.Context, analysis *common.An
 		return nil, err
 	}
 
+	// Parse JSON response using go-promptfmt
+	response := promptfmt.NewResponse(resp.Content)
 	var rootCauses []RootCause
-	if err := json.Unmarshal([]byte(resp.Content), &rootCauses); err != nil {
+	parseResult := response.TryParseJSON(&rootCauses)
+	if !parseResult.Success {
 		// If parsing fails, return empty slice
 		return nil, nil
 	}
@@ -287,8 +292,8 @@ func (a *AIAnalyzer) generateRecommendations(ctx context.Context, analysis *comm
 	prompt := a.buildRecommendationPrompt(analysis, entries, docContext)
 
 	req := &ai.CompletionRequest{
-		Prompt:       prompt,
-		SystemPrompt: "You are a DevOps consultant. Provide actionable recommendations based on log analysis in JSON format.",
+		Prompt:       prompt.String(),
+		SystemPrompt: prompt.SystemPrompt,
 		MaxTokens:    a.options.MaxTokensPerRequest,
 		Temperature:  0.4,
 	}
@@ -298,8 +303,11 @@ func (a *AIAnalyzer) generateRecommendations(ctx context.Context, analysis *comm
 		return nil, err
 	}
 
+	// Parse JSON response using go-promptfmt
+	response := promptfmt.NewResponse(resp.Content)
 	var recommendations []Recommendation
-	if err := json.Unmarshal([]byte(resp.Content), &recommendations); err != nil {
+	parseResult := response.TryParseJSON(&recommendations)
+	if !parseResult.Success {
 		return nil, nil
 	}
 
@@ -308,110 +316,99 @@ func (a *AIAnalyzer) generateRecommendations(ctx context.Context, analysis *comm
 
 // Helper methods for building prompts
 
-func (a *AIAnalyzer) buildSummaryPrompt(analysis *common.Analysis, entries []*common.LogEntry, docContext *DocumentContext) string {
-	var builder strings.Builder
+func (a *AIAnalyzer) buildSummaryPrompt(analysis *common.Analysis, entries []*common.LogEntry, docContext *DocumentContext) *promptfmt.Prompt {
+	// Use LogSum-specific pattern for better structure
+	logPattern := LogAnalysis().WithAnalysis(analysis)
 
-	builder.WriteString("Analyze this log summary and provide a concise overview:\n\n")
-	builder.WriteString(fmt.Sprintf("Time Range: %s to %s\n",
-		analysis.StartTime.Format(time.RFC3339),
-		analysis.EndTime.Format(time.RFC3339)))
-	builder.WriteString(fmt.Sprintf("Total Entries: %d\n", analysis.TotalEntries))
-	builder.WriteString(fmt.Sprintf("Errors: %d, Warnings: %d\n", analysis.ErrorCount, analysis.WarnCount))
-
-	if len(analysis.Patterns) > 0 {
-		builder.WriteString("\nTop Patterns:\n")
-		for i, pattern := range analysis.Patterns {
-			if i >= 5 { // Limit to top 5 patterns
-				break
-			}
-			builder.WriteString(fmt.Sprintf("- %s (%d occurrences)\n",
-				pattern.Pattern.Name, pattern.Count))
-		}
+	// Add error entries if available
+	if analysis.ErrorCount > 0 {
+		errorEntries := a.extractErrorEntries(entries)
+		logPattern.WithErrorEntries(errorEntries).WithSampleSize(5)
 	}
 
-	if len(analysis.Insights) > 0 {
-		builder.WriteString("\nKey Insights:\n")
-		for _, insight := range analysis.Insights {
-			builder.WriteString(fmt.Sprintf("- %s: %s\n", insight.Title, insight.Description))
-		}
-	}
+	prompt := logPattern.Build()
 
 	// Add document context if available
 	if docContext != nil && len(docContext.CorrelatedDocuments) > 0 {
 		contextSection := a.buildContextSection(docContext)
 		if contextSection != "" {
-			builder.WriteString("\n\n")
-			builder.WriteString(contextSection)
+			// Create a new prompt with the context added
+			pb := promptfmt.New().
+				System("You are a LogSum AI assistant specializing in log analysis. Provide structured insights about system health, errors, and operational patterns.").
+				User("%s", prompt.String()).
+				AddContext("documentation", contextSection)
+			if prompt.JSONSchema != nil {
+				pb.ExpectJSON(prompt.JSONSchema)
+			}
+			return pb.Build()
 		}
 	}
 
-	builder.WriteString("\nProvide a 2-3 sentence summary focusing on the most critical findings and overall system health.")
-
-	return builder.String()
+	return prompt
 }
 
-func (a *AIAnalyzer) buildErrorAnalysisPrompt(errorEntries []*common.LogEntry, analysis *common.Analysis, docContext *DocumentContext) string {
-	var builder strings.Builder
+func (a *AIAnalyzer) buildErrorAnalysisPrompt(errorEntries []*common.LogEntry, analysis *common.Analysis, docContext *DocumentContext) *promptfmt.Prompt {
+	// Use error analysis pattern from go-promptfmt
+	errorPattern := promptfmt.ErrorAnalysis()
 
-	builder.WriteString("Analyze these error logs and provide structured insights in JSON format:\n\n")
-
-	// Include sample error entries (limit to avoid token overflow)
+	// Build error samples
 	sampleSize := minInt(10, len(errorEntries))
-	builder.WriteString("Sample Error Entries:\n")
+	errorSamples := "Sample Error Entries:\n"
 	for i := 0; i < sampleSize; i++ {
 		entry := errorEntries[i]
-		builder.WriteString(fmt.Sprintf("[%s] %s: %s\n",
+		errorSamples += fmt.Sprintf("[%s] %s: %s\n",
 			entry.Timestamp.Format(time.RFC3339),
 			entry.Level,
-			entry.Message))
+			entry.Message)
 	}
 
-	builder.WriteString(fmt.Sprintf("\nTotal Errors: %d\n", analysis.ErrorCount))
-	builder.WriteString(fmt.Sprintf("Time Range: %s to %s\n",
+	// Build context
+	contextInfo := fmt.Sprintf("LogSum analysis - Total Errors: %d, Time Range: %s to %s",
+		analysis.ErrorCount,
 		analysis.StartTime.Format(time.RFC3339),
-		analysis.EndTime.Format(time.RFC3339)))
+		analysis.EndTime.Format(time.RFC3339))
 
 	// Add document context if available
 	if docContext != nil && len(docContext.CorrelatedDocuments) > 0 {
 		contextSection := a.buildContextSection(docContext)
 		if contextSection != "" {
-			builder.WriteString("\n\n")
-			builder.WriteString(contextSection)
+			contextInfo += "\n\n" + contextSection
 		}
 	}
 
-	builder.WriteString("\nProvide JSON response with: summary, critical_errors[], error_patterns[], severity_breakdown{}")
-
-	return builder.String()
+	return errorPattern.
+		WithError(errorSamples).
+		WithContext(contextInfo).
+		Build()
 }
 
-func (a *AIAnalyzer) buildRootCausePrompt(analysis *common.Analysis, entries []*common.LogEntry, docContext *DocumentContext) string {
-	var builder strings.Builder
+func (a *AIAnalyzer) buildRootCausePrompt(analysis *common.Analysis, entries []*common.LogEntry, docContext *DocumentContext) *promptfmt.Prompt {
+	// Use chain of thought pattern for root cause analysis
+	cotPattern := promptfmt.ChainOfThought()
 
-	builder.WriteString("Identify potential root causes from this log analysis. Respond in JSON format:\n\n")
+	// Build problem description
+	problem := fmt.Sprintf("System experiencing %d errors, %d warnings. Analyze root causes.",
+		analysis.ErrorCount, analysis.WarnCount)
 
-	// Include context about errors and patterns
-	builder.WriteString(fmt.Sprintf("Error Count: %d\n", analysis.ErrorCount))
-	builder.WriteString(fmt.Sprintf("Warning Count: %d\n", analysis.WarnCount))
-
+	// Add patterns context
 	if len(analysis.Patterns) > 0 {
-		builder.WriteString("\nFrequent Patterns:\n")
+		problem += "\n\nFrequent Patterns:\n"
 		for i, pattern := range analysis.Patterns {
 			if i >= 3 {
 				break
 			}
-			builder.WriteString(fmt.Sprintf("- %s (%d times)\n", pattern.Pattern.Name, pattern.Count))
+			problem += fmt.Sprintf("- %s (%d times)\n", pattern.Pattern.Name, pattern.Count)
 		}
 	}
 
-	// Include recent error samples
+	// Add error samples
 	errorEntries := a.extractErrorEntries(entries)
 	if len(errorEntries) > 0 {
 		sampleSize := minInt(5, len(errorEntries))
-		builder.WriteString("\nRecent Errors:\n")
+		problem += "\n\nRecent Errors:\n"
 		for i := 0; i < sampleSize; i++ {
 			entry := errorEntries[i]
-			builder.WriteString(fmt.Sprintf("- %s\n", entry.Message))
+			problem += fmt.Sprintf("- %s\n", entry.Message)
 		}
 	}
 
@@ -419,43 +416,52 @@ func (a *AIAnalyzer) buildRootCausePrompt(analysis *common.Analysis, entries []*
 	if docContext != nil && len(docContext.CorrelatedDocuments) > 0 {
 		contextSection := a.buildContextSection(docContext)
 		if contextSection != "" {
-			builder.WriteString("\n\n")
-			builder.WriteString(contextSection)
+			problem += "\n\n" + contextSection
 		}
 	}
 
-	builder.WriteString("\nProvide JSON array of root causes with: title, description, confidence (0-1), category, impact")
-
-	return builder.String()
+	return cotPattern.
+		WithProblem(problem, "System Reliability").
+		WithMaxSteps(5).
+		Build()
 }
 
-func (a *AIAnalyzer) buildRecommendationPrompt(analysis *common.Analysis, entries []*common.LogEntry, docContext *DocumentContext) string {
-	var builder strings.Builder
+func (a *AIAnalyzer) buildRecommendationPrompt(analysis *common.Analysis, entries []*common.LogEntry, docContext *DocumentContext) *promptfmt.Prompt {
+	pb := promptfmt.New().
+		System("You are a DevOps consultant. Provide actionable recommendations based on log analysis in JSON format.").
+		User("Based on this log analysis, provide actionable recommendations:\n\nSystem Health: %d errors, %d warnings out of %d total entries",
+			analysis.ErrorCount, analysis.WarnCount, analysis.TotalEntries)
 
-	builder.WriteString("Based on this log analysis, provide actionable recommendations in JSON format:\n\n")
-
-	builder.WriteString(fmt.Sprintf("System Health: %d errors, %d warnings out of %d total entries\n",
-		analysis.ErrorCount, analysis.WarnCount, analysis.TotalEntries))
-
+	// Add insights context
 	if len(analysis.Insights) > 0 {
-		builder.WriteString("\nKey Issues Identified:\n")
+		insightsText := "Key Issues Identified:\n"
 		for _, insight := range analysis.Insights {
-			builder.WriteString(fmt.Sprintf("- %s (%s)\n", insight.Title, insight.Type))
+			insightsText += fmt.Sprintf("- %s (%s)\n", insight.Title, insight.Type)
 		}
+		pb.AddContext("issues", insightsText)
 	}
 
 	// Add document context if available
 	if docContext != nil && len(docContext.CorrelatedDocuments) > 0 {
 		contextSection := a.buildContextSection(docContext)
 		if contextSection != "" {
-			builder.WriteString("\n\n")
-			builder.WriteString(contextSection)
+			pb.AddContext("documentation", contextSection)
 		}
 	}
 
-	builder.WriteString("\nProvide JSON array of recommendations with: title, description, priority, category, action_items[], effort")
+	// Expect structured JSON response
+	type RecommendationResponse struct {
+		Recommendations []struct {
+			Title       string   `json:"title"`
+			Description string   `json:"description"`
+			Priority    string   `json:"priority"`
+			Category    string   `json:"category"`
+			ActionItems []string `json:"action_items"`
+			Effort      string   `json:"effort"`
+		} `json:"recommendations"`
+	}
 
-	return builder.String()
+	return pb.ExpectJSON(&RecommendationResponse{}).Build()
 }
 
 // buildDocumentContext creates DocumentContext from correlation results
