@@ -151,6 +151,7 @@ func TestProvider_Complete(t *testing.T) {
 
 	if resp == nil {
 		t.Fatal("Complete() returned nil response")
+		return
 	}
 
 	if resp.Content != "This is a test response" {

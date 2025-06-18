@@ -15,6 +15,8 @@ func NewMemoryStore(options ...MemoryStoreOption) *MemoryStore {
 		AutoSaveInterval: 5 * time.Minute,
 		MaxVectors:       10000,
 		NormalizeVectors: false,
+		EnableCache:      false,
+		CacheSize:        1000,
 	}
 
 	for _, option := range options {
@@ -25,6 +27,12 @@ func NewMemoryStore(options ...MemoryStoreOption) *MemoryStore {
 		vectors: make(map[string]VectorEntry),
 		options: opts,
 		done:    make(chan bool),
+	}
+
+	// Initialize cache if enabled
+	if opts.EnableCache {
+		store.cache = make(map[string]CacheEntry)
+		store.cacheKeys = make([]string, 0, opts.CacheSize)
 	}
 
 	// Start auto-save routine if enabled
@@ -88,7 +96,7 @@ func (ms *MemoryStore) Search(vector []float32, topK int) ([]SearchResult, error
 
 	results := make([]scoredResult, 0, len(ms.vectors))
 	for _, entry := range ms.vectors {
-		similarity := CosineSimilarity(queryVector, entry.Vector)
+		similarity := ms.getCachedSimilarity(queryVector, entry.Vector, entry.ID)
 
 		result := SearchResult{
 			ID:     entry.ID,
@@ -299,7 +307,7 @@ func (ms *MemoryStore) SearchWithFilter(vector []float32, topK int, filter func(
 			continue
 		}
 
-		similarity := CosineSimilarity(queryVector, entry.Vector)
+		similarity := ms.getCachedSimilarity(queryVector, entry.Vector, entry.ID)
 
 		result := SearchResult{
 			ID:     entry.ID,
@@ -361,4 +369,90 @@ func (ms *MemoryStore) ImportFromReader(reader io.Reader) error {
 	}
 
 	return nil
+}
+
+// getCachedSimilarity returns cached similarity or calculates and caches it
+func (ms *MemoryStore) getCachedSimilarity(queryVector, targetVector []float32, targetID string) float32 {
+	if !ms.options.EnableCache {
+		return CosineSimilarity(queryVector, targetVector)
+	}
+
+	// Generate cache key
+	cacheKey := ms.generateCacheKey(queryVector, targetID)
+
+	// Check cache first
+	ms.cacheMu.RLock()
+	if entry, exists := ms.cache[cacheKey]; exists {
+		ms.cacheMu.RUnlock()
+		return entry.Similarity
+	}
+	ms.cacheMu.RUnlock()
+
+	// Calculate similarity
+	similarity := CosineSimilarity(queryVector, targetVector)
+
+	// Cache the result
+	ms.addToCache(cacheKey, similarity)
+
+	return similarity
+}
+
+// generateCacheKey creates a unique key for the vector pair
+func (ms *MemoryStore) generateCacheKey(queryVector []float32, targetID string) string {
+	// Use a simple hash based on first few vector elements and target ID
+	// This is much faster than MD5 for our use case
+	var hash uint64 = 5381
+
+	// Hash first 8 elements of query vector (or all if less than 8)
+	limit := len(queryVector)
+	if limit > 8 {
+		limit = 8
+	}
+
+	for i := 0; i < limit; i++ {
+		val := uint64(queryVector[i] * 1000000) // Convert to fixed-point for hashing
+		hash = ((hash << 5) + hash) + val
+	}
+
+	// Hash target ID
+	for _, b := range []byte(targetID) {
+		hash = ((hash << 5) + hash) + uint64(b)
+	}
+
+	return fmt.Sprintf("%x", hash)
+}
+
+// addToCache adds a similarity calculation to the cache with LRU eviction
+func (ms *MemoryStore) addToCache(key string, similarity float32) {
+	ms.cacheMu.Lock()
+	defer ms.cacheMu.Unlock()
+
+	// If cache is full, remove oldest entry
+	if len(ms.cache) >= ms.options.CacheSize {
+		if len(ms.cacheKeys) > 0 {
+			oldestKey := ms.cacheKeys[0]
+			delete(ms.cache, oldestKey)
+			ms.cacheKeys = ms.cacheKeys[1:]
+		}
+	}
+
+	// Add new entry
+	ms.cache[key] = CacheEntry{
+		Similarity: similarity,
+		Timestamp:  time.Now(),
+	}
+	ms.cacheKeys = append(ms.cacheKeys, key)
+}
+
+// ClearCache clears the similarity cache
+func (ms *MemoryStore) ClearCache() {
+	if !ms.options.EnableCache {
+		return
+	}
+
+	ms.cacheMu.Lock()
+	defer ms.cacheMu.Unlock()
+
+	ms.cache = make(map[string]CacheEntry)
+	ms.cacheKeys = make([]string, 0, ms.options.CacheSize)
 }

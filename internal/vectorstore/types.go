@@ -21,6 +21,14 @@ type MemoryStoreOptions struct {
 	AutoSaveInterval time.Duration
 	MaxVectors       int
 	NormalizeVectors bool
+	EnableCache      bool
+	CacheSize        int
+}
+
+// CacheEntry represents a cached similarity calculation
+type CacheEntry struct {
+	Similarity float32
+	Timestamp  time.Time
 }
 
 // MemoryStoreOption is a function type for configuring MemoryStore
@@ -55,13 +63,24 @@ func WithNormalization() MemoryStoreOption {
 	}
 }
 
+// WithCache enables similarity calculation caching
+func WithCache(cacheSize int) MemoryStoreOption {
+	return func(opts *MemoryStoreOptions) {
+		opts.EnableCache = true
+		opts.CacheSize = cacheSize
+	}
+}
+
 // MemoryStore implements VectorStore using in-memory storage
 type MemoryStore struct {
-	mu      sync.RWMutex
-	vectors map[string]VectorEntry
-	options MemoryStoreOptions
-	ticker  *time.Ticker
-	done    chan bool
+	mu        sync.RWMutex
+	vectors   map[string]VectorEntry
+	options   MemoryStoreOptions
+	ticker    *time.Ticker
+	done      chan bool
+	cache     map[string]CacheEntry
+	cacheKeys []string
+	cacheMu   sync.RWMutex
 }
 
 // TFIDFVectorizer implements text vectorization using TF-IDF

@@ -83,6 +83,7 @@ from files or stdin with real-time monitoring capabilities.`,
 	rootCmd.AddCommand(newPatternsCommand())
 	rootCmd.AddCommand(newWatchCommand())
 	rootCmd.AddCommand(newConfigCommand())
+	rootCmd.AddCommand(newMonitorCommand())
 	rootCmd.AddCommand(newVersionCommand(version, commit, date))
 
 	return rootCmd

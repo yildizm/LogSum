@@ -7,6 +7,7 @@ import (
 
 	"github.com/yildizm/LogSum/internal/ai"
 	"github.com/yildizm/LogSum/internal/common"
+	correlationpkg "github.com/yildizm/LogSum/internal/correlation"
 	"github.com/yildizm/go-logparser"
 )
 
@@ -180,6 +181,7 @@ func TestNewAIAnalyzer(t *testing.T) {
 
 	if aiAnalyzer == nil {
 		t.Fatal("Expected AIAnalyzer to be created, got nil")
+		return
 	}
 
 	if aiAnalyzer.baseAnalyzer != baseAnalyzer {
@@ -198,6 +200,7 @@ func TestNewAIAnalyzerWithDefaults(t *testing.T) {
 
 	if aiAnalyzer == nil {
 		t.Fatal("Expected AIAnalyzer to be created with defaults, got nil")
+		return
 	}
 
 	if aiAnalyzer.options.MaxTokensPerRequest != 2000 {
@@ -626,16 +629,15 @@ func TestBuildDocumentContext(t *testing.T) {
 		t.Error("Expected nil document context for nil correlation result")
 	}
 
-	// TODO: Re-enable after resolving import cycle with correlation package
 	// Test with empty correlations
-	// emptyResult := &correlation.CorrelationResult{
-	//     TotalPatterns:      0,
-	//     CorrelatedPatterns: 0,
-	//     Correlations:       []*correlation.PatternCorrelation{},
-	// }
-	//
-	// docContext = aiAnalyzer.buildDocumentContext(emptyResult)
-	// if docContext != nil {
-	//     t.Error("Expected nil document context for empty correlations")
-	// }
+	emptyResult := &correlationpkg.CorrelationResult{
+		TotalPatterns:      0,
+		CorrelatedPatterns: 0,
+		Correlations:       []*correlationpkg.PatternCorrelation{},
+	}
+
+	docContext = aiAnalyzer.buildDocumentContext(emptyResult)
+	if docContext != nil {
+		t.Error("Expected nil document context for empty correlations")
+	}
 }

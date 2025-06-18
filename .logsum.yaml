@@ -1,20 +1,103 @@
-# LogSum Configuration File (Minimal)
+# LogSum Configuration File
+# This file contains all available configuration options for LogSum
+
+# Configuration version for compatibility checking
 version: "1.0"
 
-# Basic pattern configuration
+# Pattern configuration
 patterns:
+  # Directories to search for pattern files
   directories:
     - "./patterns"
+    - "./examples/patterns"
+  
+  # Automatically reload patterns when files change
+  auto_reload: false
+  
+  # Enable built-in default patterns
   enable_defaults: true
+  
+  # Custom patterns defined inline (optional)
+  custom_patterns:
+    # Example custom pattern
+    # my_pattern:
+    #   name: "My Custom Pattern"
+    #   pattern: "ERROR.*"
+    #   severity: "high"
 
-# AI configuration (optional)
-# ai:
-#   provider: "ollama"
-#   model: "llama3.2"
-#   endpoint: "http://localhost:11434"
+# AI provider configuration
+ai:
+  # AI provider: ollama, openai, or anthropic
+  provider: "ollama"
+  
+  # Model to use for AI features
+  model: "llama3.2"
+  
+  # API endpoint URL
+  endpoint: "http://localhost:11434"
+  
+  # API key (use environment variable LOGSUM_AI_API_KEY for security)
+  api_key: ""
+  
+  # Request timeout
+  timeout: 30s
+  
+  # Maximum number of retries for failed requests
+  max_retries: 3
 
-# Output preferences
+# Storage and caching configuration
+storage:
+  # Directory for cache files
+  cache_dir: "~/.cache/logsum"
+  
+  # Path to document index database
+  index_path: "~/.cache/logsum/index.db"
+  
+  # Path to vector database
+  vector_db_path: "~/.cache/logsum/vectors.db"
+  
+  # Temporary directory for processing
+  temp_dir: "/tmp/logsum"
+
+# Output formatting configuration
 output:
+  # Default output format: json, text, markdown, or csv
   default_format: "text"
+  
+  # Color output mode: auto, always, or never
   color_mode: "auto"
+  
+  # Enable verbose output by default
   verbose: false
+  
+  # Timestamp format for output (Go time format)
+  timestamp_format: "2006-01-02 15:04:05"
+  
+  # Show progress bars during processing
+  show_progress: true
+  
+  # Use compact output mode
+  compact_mode: false
+
+# Analysis configuration
+analysis:
+  # Maximum number of log entries to process
+  max_entries: 100000
+  
+  # Number of buckets for timeline analysis
+  timeline_buckets: 60
+  
+  # Enable insights generation
+  enable_insights: true
+  
+  # Analysis timeout
+  timeout: 60s
+  
+  # Buffer size for reading files
+  buffer_size: 4096
+  
+  # Maximum line length to process (in bytes)
+  max_line_length: 1048576  # 1MB
+  
+  # Enable strict parsing mode
+  strict_mode: false

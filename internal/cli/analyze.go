@@ -13,7 +13,6 @@ import (
 	"github.com/spf13/cobra"
 	"github.com/yildizm/LogSum/internal/analyzer"
 	"github.com/yildizm/LogSum/internal/common"
-	"github.com/yildizm/LogSum/internal/config"
 	"github.com/yildizm/LogSum/internal/correlation"
 	"github.com/yildizm/LogSum/internal/docstore"
 	"github.com/yildizm/LogSum/internal/formatter"
@@ -31,6 +30,7 @@ var (
 	analyzeOutputFile string
 	analyzeDocsPath   string
 	analyzeCorrelate  bool
+	analyzeAI         bool
 )
 
 func newAnalyzeCommand() *cobra.Command {
@@ -45,6 +45,8 @@ or manual format specification.
 Examples:
   logsum analyze app.log
   logsum analyze --format json access.log
+  logsum analyze --ai app.log
+  logsum analyze --ai --docs ./docs/ app.log
   cat app.log | logsum analyze
   logsum analyze --patterns ./patterns/ app.log`,
 		Args: cobra.MaximumNArgs(1),
@@ -60,6 +62,7 @@ Examples:
 	cmd.Flags().StringVar(&analyzeOutputFile, "output-file", "", "save output to file instead of stdout")
 	cmd.Flags().StringVar(&analyzeDocsPath, "docs", "", "path to documentation directory for correlation")
 	cmd.Flags().BoolVar(&analyzeCorrelate, "correlate", false, "enable error-documentation correlation")
+	cmd.Flags().BoolVar(&analyzeAI, "ai", false, "enable AI-powered analysis with LLM integration")
 
 	return cmd
 }
@@ -94,8 +97,9 @@ func runAnalyze(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	// Load patterns using config
-	patterns := loadAnalysisPatterns()
+	// Load patterns using pattern loader
+	patternLoader := NewPatternLoader()
+	patterns := patternLoader.LoadAnalysisPatterns()
 
 	// Run analysis
 	return runAnalysisAndOutput(ctx, entries, patterns)
@@ -120,47 +124,6 @@ func readLines(reader io.Reader, maxLines int) ([]string, error) {
 	}
 
 	return lines, nil
-}
-
-// loadPatternsFromPath loads patterns from a file or directory
-func loadPatternsFromPath(path string) ([]*common.Pattern, error) {
-	info, err := os.Stat(path)
-	if err != nil {
-		return nil, fmt.Errorf("path does not exist: %w", err)
-	}
-
-	if info.IsDir() {
-		return loadPatternsFromDirectory(path)
-	}
-	return loadPatternsFromFile(path)
-}
-
-// loadPatternsFromDirectory loads all pattern files from a directory
-func loadPatternsFromDirectory(directory string) ([]*common.Pattern, error) {
-	var patterns []*common.Pattern
-
-	err := filepath.Walk(directory, func(path string, info os.FileInfo, err error) error {
-		if err != nil {
-			return err
-		}
-
-		if !info.IsDir() && (strings.HasSuffix(path, ".yaml") || strings.HasSuffix(path, ".yml")) {
-			filePatterns, err := loadPatternsFromFile(path)
-			if err != nil {
-				// Log warning but continue with other files
-				return nil
-			}
-			patterns = append(patterns, filePatterns...)
-		}
-		return nil
-	})
-
-	return patterns, err
-}
-
-// loadPatternsFromFile loads patterns from a single YAML file
-func loadPatternsFromFile(filename string) ([]*common.Pattern, error) {
-	return common.LoadPatternsFromFile(filename)
 }
 
 // setupInputReader sets up the input reader based on command args
@@ -280,189 +243,60 @@ func parseWithSpecificFormat(lines []string) ([]*common.LogEntry, error) {
 	return entries, nil
 }
 
-// loadAnalysisPatterns loads patterns based on configuration
-func loadAnalysisPatterns() []*common.Pattern {
-	cfg := GetGlobalConfig()
-
-	// Check if patterns flag was explicitly set
-	if analyzePatterns != "" {
-		return loadPatternsFromFlag()
-	}
-
-	return loadPatternsFromConfig(cfg)
-}
-
-// loadPatternsFromFlag loads patterns from the command line flag
-func loadPatternsFromFlag() []*common.Pattern {
-	loadedPatterns, err := loadPatternsFromPath(analyzePatterns)
-	if err != nil {
-		if isVerbose() {
-			fmt.Fprintf(os.Stderr, "Warning: failed to load patterns from %s: %v\n", analyzePatterns, err)
-		}
-		return nil
-	}
-
-	if isVerbose() {
-		fmt.Fprintf(os.Stderr, "Loaded %d patterns from flag\n", len(loadedPatterns))
-	}
-	return loadedPatterns
-}
-
-// loadPatternsFromConfig loads patterns from configuration settings
-func loadPatternsFromConfig(cfg *config.Config) []*common.Pattern {
-	var patterns []*common.Pattern
-
-	// Load patterns from configured directories
-	patterns = append(patterns, loadPatternsFromDirectories(cfg.Patterns.Directories)...)
-
-	// Add custom patterns from config
-	if len(cfg.Patterns.CustomPatterns) > 0 {
-		customPatterns := convertCustomPatterns(cfg.Patterns.CustomPatterns)
-		patterns = append(patterns, customPatterns...)
-		if isVerbose() {
-			fmt.Fprintf(os.Stderr, "Loaded %d custom patterns from config\n", len(customPatterns))
-		}
-	}
-
-	// Use embedded default patterns if enabled and no patterns loaded
-	if cfg.Patterns.EnableDefaults && len(patterns) == 0 {
-		patterns = loadDefaultPatterns()
-	}
-
-	return patterns
-}
-
-// loadPatternsFromDirectories loads patterns from configured directories
-func loadPatternsFromDirectories(directories []string) []*common.Pattern {
-	var patterns []*common.Pattern
-
-	for _, dir := range directories {
-		if _, err := os.Stat(dir); err == nil {
-			loadedPatterns, err := loadPatternsFromPath(dir)
-			if err != nil {
-				if isVerbose() {
-					fmt.Fprintf(os.Stderr, "Warning: failed to load patterns from %s: %v\n", dir, err)
-				}
-			} else {
-				patterns = append(patterns, loadedPatterns...)
-				if isVerbose() {
-					fmt.Fprintf(os.Stderr, "Loaded %d patterns from %s\n", len(loadedPatterns), dir)
-				}
-			}
-		}
-	}
-
-	return patterns
-}
-
-// loadDefaultPatterns loads embedded default patterns
-func loadDefaultPatterns() []*common.Pattern {
-	loadedPatterns, err := common.LoadDefaultPatterns()
-	if err != nil {
-		if isVerbose() {
-			fmt.Fprintf(os.Stderr, "Warning: failed to load default patterns: %v\n", err)
-		}
-		return nil
-	}
-
-	if isVerbose() {
-		fmt.Fprintf(os.Stderr, "Loaded %d default patterns\n", len(loadedPatterns))
-	}
-	return loadedPatterns
-}
-
-// convertCustomPatterns converts config custom patterns to common.Pattern format
-func convertCustomPatterns(customPatterns map[string]interface{}) []*common.Pattern {
-	var patterns []*common.Pattern
-
-	for name, patternData := range customPatterns {
-		patternMap, ok := patternData.(map[string]interface{})
-		if !ok {
-			continue
-		}
-
-		pattern := convertSinglePattern(name, patternMap)
-		if pattern != nil {
-			patterns = append(patterns, pattern)
-		}
-	}
-
-	return patterns
-}
-
-// convertSinglePattern converts a single pattern map to common.Pattern
-func convertSinglePattern(name string, patternMap map[string]interface{}) *common.Pattern {
-	pattern := &common.Pattern{
-		ID:   name,
-		Name: name,
-	}
-
-	if patternStr, ok := patternMap["pattern"].(string); ok {
-		pattern.Regex = patternStr
-	}
-	if severityStr, ok := patternMap["severity"].(string); ok {
-		pattern.Severity = convertSeverity(severityStr)
-	}
-	if description, ok := patternMap["description"].(string); ok {
-		pattern.Description = description
-	}
-
-	if pattern.Regex != "" {
-		return pattern
-	}
-	return nil
-}
-
-// convertSeverity converts string severity to LogLevel
-func convertSeverity(severityStr string) common.LogLevel {
-	switch strings.ToLower(severityStr) {
-	case "debug":
-		return common.LevelDebug
-	case "info":
-		return common.LevelInfo
-	case "warn", "warning":
-		return common.LevelWarn
-	case "error":
-		return common.LevelError
-	case "fatal":
-		return common.LevelFatal
-	default:
-		return common.LevelInfo
-	}
-}
-
-// runAnalysisAndOutput performs analysis and outputs results
+// runAnalysisAndOutput performs analysis and outputs results.
+// This is the main orchestrator that determines whether to use TUI or CLI mode
+// and coordinates the analysis pipeline.
 func runAnalysisAndOutput(ctx context.Context, entries []*common.LogEntry, patterns []*common.Pattern) error {
-	// Determine if we should use TUI
-	shouldUseTUI := !analyzeNoTUI && getOutputFormat() == "text" && !isVerbose()
-
-	if shouldUseTUI {
-		// Launch TUI
-		if isVerbose() {
-			fmt.Fprintf(os.Stderr, "Launching interactive terminal UI...\n")
-		}
-		return ui.InteractiveRun(entries, patterns)
+	if shouldUseTUIMode() {
+		return runTUIAnalysis(entries, patterns)
 	}
+	return runCLIAnalysis(ctx, entries, patterns)
+}
 
-	// Perform CLI analysis
+// shouldUseTUIMode determines if the terminal UI should be used based on flags and output settings.
+func shouldUseTUIMode() bool {
+	return !analyzeNoTUI && getOutputFormat() == "text" && !isVerbose()
+}
+
+// runTUIAnalysis launches the interactive terminal UI for log analysis.
+func runTUIAnalysis(entries []*common.LogEntry, patterns []*common.Pattern) error {
+	if isVerbose() {
+		fmt.Fprintf(os.Stderr, "Launching interactive terminal UI...\n")
+	}
+	return ui.InteractiveRun(entries, patterns)
+}
+
+// runCLIAnalysis performs command-line analysis with optional correlation and outputs results.
+func runCLIAnalysis(ctx context.Context, entries []*common.LogEntry, patterns []*common.Pattern) error {
+	// Perform main analysis
 	analysis, err := performAnalysis(ctx, entries, patterns)
 	if err != nil {
 		return err
 	}
 
-	// Perform document correlation if enabled
-	var correlationResult *correlation.CorrelationResult
-	if analyzeCorrelate && analyzeDocsPath != "" {
-		correlationResult, err = performCorrelation(ctx, analysis)
-		if err != nil {
-			if isVerbose() {
-				fmt.Fprintf(os.Stderr, "Warning: correlation failed: %v\n", err)
-			}
-		}
+	// Perform correlation if enabled
+	correlationResult, err := performCorrelationIfEnabled(ctx, analysis)
+	if err != nil {
+		logCorrelationWarning(err)
 	}
 
 	// Format and output results
 	return formatAndOutputResults(analysis, correlationResult)
+}
+
+// performCorrelationIfEnabled runs document correlation if both correlation and docs path are enabled.
+func performCorrelationIfEnabled(ctx context.Context, analysis *analyzer.Analysis) (*correlation.CorrelationResult, error) {
+	if !analyzeCorrelate || analyzeDocsPath == "" {
+		return nil, nil
+	}
+	return performCorrelation(ctx, analysis)
+}
+
+// logCorrelationWarning logs correlation errors in verbose mode to avoid cluttering output.
+func logCorrelationWarning(err error) {
+	if isVerbose() {
+		fmt.Fprintf(os.Stderr, "Warning: correlation failed: %v\n", err)
+	}
 }
 
 // performAnalysis runs the analysis engine with patterns
@@ -477,9 +311,19 @@ func performAnalysis(ctx context.Context, entries []*common.LogEntry, patterns [
 	}
 
 	if isVerbose() {
-		fmt.Fprintf(os.Stderr, "Performing analysis...\n")
+		if analyzeAI {
+			fmt.Fprintf(os.Stderr, "Performing AI-enhanced analysis...\n")
+		} else {
+			fmt.Fprintf(os.Stderr, "Performing analysis...\n")
+		}
 	}
 
+	// Use AI analyzer if --ai flag is set
+	if analyzeAI {
+		return performAIAnalysis(ctx, engine, entries)
+	}
+
+	// Standard analysis
 	analysis, err := engine.Analyze(ctx, entries)
 	if err != nil {
 		return nil, fmt.Errorf("analysis failed: %w", err)
@@ -568,38 +412,62 @@ func formatAndOutputResults(analysis *analyzer.Analysis, correlationResult *corr
 	return handleOutputDestination(output)
 }
 
-// formatCorrelationResults formats correlation results as text
+// formatCorrelationResults formats correlation results as text.
+// Returns formatted output showing document correlations with patterns.
 func formatCorrelationResults(result *correlation.CorrelationResult) []byte {
 	if result == nil || len(result.Correlations) == 0 {
 		return []byte("\n--- Document Correlations ---\nNo correlations found.\n")
 	}
 
 	var output strings.Builder
+	writeCorrelationHeader(&output, result)
+	writeCorrelationDetails(&output, result.Correlations)
+	return []byte(output.String())
+}
+
+// writeCorrelationHeader writes the header section of correlation results.
+func writeCorrelationHeader(output *strings.Builder, result *correlation.CorrelationResult) {
 	output.WriteString("\n--- Document Correlations ---\n")
-	output.WriteString(fmt.Sprintf("Found %d correlations out of %d patterns\n\n",
-		result.CorrelatedPatterns, result.TotalPatterns))
+	fmt.Fprintf(output, "Found %d correlations out of %d patterns\n\n",
+		result.CorrelatedPatterns, result.TotalPatterns)
+}
 
-	for i, correlation := range result.Correlations {
-		output.WriteString(fmt.Sprintf("Pattern %d: %s\n", i+1, correlation.Pattern.Name))
-		output.WriteString(fmt.Sprintf("  Description: %s\n", correlation.Pattern.Description))
-		output.WriteString(fmt.Sprintf("  Keywords: %s\n", strings.Join(correlation.Keywords, ", ")))
-		output.WriteString(fmt.Sprintf("  Match Count: %d\n", correlation.MatchCount))
-		output.WriteString("  Related Documents:\n")
-
-		for j, docMatch := range correlation.DocumentMatches {
-			if j >= 3 { // Limit to top 3 documents
-				break
-			}
-			output.WriteString(fmt.Sprintf("    %d. %s (Score: %.2f)\n",
-				j+1, docMatch.Document.Title, docMatch.Score))
-			output.WriteString(fmt.Sprintf("       Path: %s\n", docMatch.Document.Path))
-			output.WriteString(fmt.Sprintf("       Keywords: %s\n",
-				strings.Join(docMatch.MatchedKeywords, ", ")))
-		}
+// writeCorrelationDetails writes detailed information for each correlation.
+func writeCorrelationDetails(output *strings.Builder, correlations []*correlation.PatternCorrelation) {
+	for i, correlation := range correlations {
+		writePatternInfo(output, i+1, correlation)
+		writeDocumentMatches(output, correlation.DocumentMatches)
 		output.WriteString("\n")
 	}
+}
 
-	return []byte(output.String())
+// writePatternInfo writes pattern information for a single correlation.
+func writePatternInfo(output *strings.Builder, index int, patternCorrelation *correlation.PatternCorrelation) {
+	fmt.Fprintf(output, "Pattern %d: %s\n", index, patternCorrelation.Pattern.Name)
+	fmt.Fprintf(output, "  Description: %s\n", patternCorrelation.Pattern.Description)
+	fmt.Fprintf(output, "  Keywords: %s\n", strings.Join(patternCorrelation.Keywords, ", "))
+	fmt.Fprintf(output, "  Match Count: %d\n", patternCorrelation.MatchCount)
+	output.WriteString("  Related Documents:\n")
+}
+
+// writeDocumentMatches writes document match information, limited to top 3 documents.
+func writeDocumentMatches(output *strings.Builder, documentMatches []*correlation.DocumentMatch) {
+	const maxDocuments = 3
+	for j, docMatch := range documentMatches {
+		if j >= maxDocuments {
+			break
+		}
+		writeDocumentMatch(output, j+1, docMatch)
+	}
+}
+
+// writeDocumentMatch writes a single document match with score and details.
+func writeDocumentMatch(output *strings.Builder, index int, docMatch *correlation.DocumentMatch) {
+	fmt.Fprintf(output, "    %d. %s (Score: %.2f)\n",
+		index, docMatch.Document.Title, docMatch.Score)
+	fmt.Fprintf(output, "       Path: %s\n", docMatch.Document.Path)
+	fmt.Fprintf(output, "       Keywords: %s\n",
+		strings.Join(docMatch.MatchedKeywords, ", "))
 }
 
 // handleOutputDestination writes output to file or stdout
