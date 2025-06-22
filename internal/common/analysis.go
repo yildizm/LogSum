@@ -6,14 +6,16 @@ import (
 
 // Analysis represents the result of log analysis
 type Analysis struct {
-	StartTime    time.Time      `json:"start_time"`
-	EndTime      time.Time      `json:"end_time"`
-	TotalEntries int            `json:"total_entries"`
-	ErrorCount   int            `json:"error_count"`
-	WarnCount    int            `json:"warn_count"`
-	Patterns     []PatternMatch `json:"patterns"`
-	Insights     []Insight      `json:"insights"`
-	Timeline     *Timeline      `json:"timeline,omitempty"`
+	StartTime    time.Time              `json:"start_time"`
+	EndTime      time.Time              `json:"end_time"`
+	TotalEntries int                    `json:"total_entries"`
+	ErrorCount   int                    `json:"error_count"`
+	WarnCount    int                    `json:"warn_count"`
+	Patterns     []PatternMatch         `json:"patterns"`
+	Insights     []Insight              `json:"insights"`
+	Timeline     *Timeline              `json:"timeline,omitempty"`
+	Context      map[string]interface{} `json:"context,omitempty"`     // For storing additional analysis context (e.g., AI results)
+	RawEntries   []*LogEntry            `json:"raw_entries,omitempty"` // Store raw entries for correlation
 }
 
 // PatternMatch represents a matched pattern in logs

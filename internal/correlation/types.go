@@ -5,11 +5,14 @@ import (
 	"github.com/yildizm/LogSum/internal/docstore"
 )
 
-// CorrelationResult represents the result of correlating patterns with documentation
+// CorrelationResult represents the result of correlating patterns and errors with documentation
 type CorrelationResult struct {
 	TotalPatterns      int                   `json:"total_patterns"`
 	CorrelatedPatterns int                   `json:"correlated_patterns"`
 	Correlations       []*PatternCorrelation `json:"correlations"`
+	TotalErrors        int                   `json:"total_errors"`
+	CorrelatedErrors   int                   `json:"correlated_errors"`
+	DirectCorrelations []*ErrorCorrelation   `json:"direct_correlations"`
 }
 
 // PatternCorrelation represents the correlation between a pattern and documentation
@@ -18,6 +21,16 @@ type PatternCorrelation struct {
 	Keywords        []string         `json:"keywords"`
 	DocumentMatches []*DocumentMatch `json:"document_matches"`
 	MatchCount      int              `json:"match_count"`
+}
+
+// ErrorCorrelation represents the correlation between a direct error and documentation
+type ErrorCorrelation struct {
+	Error           *common.LogEntry `json:"error"`
+	ErrorType       string           `json:"error_type"`
+	Keywords        []string         `json:"keywords"`
+	DocumentMatches []*DocumentMatch `json:"document_matches"`
+	MatchCount      int              `json:"match_count"`
+	Confidence      float64          `json:"confidence"`
 }
 
 // DocumentMatch represents a document that matches pattern keywords
@@ -55,7 +68,7 @@ func DefaultHybridSearchConfig() *HybridSearchConfig {
 		VectorWeight:   0.4,
 		MaxResults:     5,
 		VectorTopK:     10,
-		MinVectorScore: 0.1,
+		MinVectorScore: 0.01,
 		EnableVector:   true,
 	}
 }

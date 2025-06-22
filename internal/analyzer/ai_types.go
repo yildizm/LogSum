@@ -170,6 +170,7 @@ type DocumentContext struct {
 	TotalDocuments      int               `json:"total_documents"`
 	TokensUsed          int               `json:"tokens_used"`
 	TruncatedContext    bool              `json:"truncated_context"`
+	DirectErrorCount    int               `json:"direct_error_count,omitempty"` // Number of direct error correlations
 }
 
 // ContextDocument represents a document used for AI context
@@ -180,6 +181,8 @@ type ContextDocument struct {
 	Score           float64  `json:"score"`
 	Excerpt         string   `json:"excerpt"`
 	RelevantSection string   `json:"relevant_section,omitempty"`
+	Source          string   `json:"source,omitempty"`        // Source of correlation (pattern-correlation, direct-error-correlation)
+	ErrorContext    string   `json:"error_context,omitempty"` // Additional context for error correlations
 }
 
 // SourceCitation represents a citation to source documentation

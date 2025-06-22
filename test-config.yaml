@@ -1,0 +1,6 @@
+ai:
+  provider: mock
+  model: test-model
+  endpoint: http://localhost:11434
+  api_key: ""
+  timeout: 30s

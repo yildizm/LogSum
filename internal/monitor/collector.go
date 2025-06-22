@@ -21,7 +21,7 @@ type Collector interface {
 	TrackOperationWithError(operation OperationType, fn func() error) error
 
 	// RecordMetric records a custom metric
-	RecordMetric(metric Metric) error
+	RecordMetric(metric *Metric) error
 
 	// GetSnapshot returns a current metrics snapshot
 	GetSnapshot() MetricsSnapshot

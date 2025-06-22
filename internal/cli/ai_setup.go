@@ -102,7 +102,25 @@ func performAIAnalysis(ctx context.Context, baseEngine analyzer.Analyzer, entrie
 		return nil, fmt.Errorf("AI analysis failed: %w", err)
 	}
 
-	// Return the base analysis from AI result
+	// Add AI analysis results to the base analysis for display
+	if aiResult.Analysis != nil {
+		// Store AI-specific results in the analysis for display
+		if aiResult.Analysis.Context == nil {
+			aiResult.Analysis.Context = make(map[string]interface{})
+		}
+		aiResult.Analysis.Context["ai_summary"] = aiResult.AISummary
+		aiResult.Analysis.Context["error_analysis"] = aiResult.ErrorAnalysis
+		aiResult.Analysis.Context["root_causes"] = aiResult.RootCauses
+		aiResult.Analysis.Context["recommendations"] = aiResult.Recommendations
+		aiResult.Analysis.Context["document_context"] = aiResult.DocumentContext
+		aiResult.Analysis.Context["ai_metadata"] = map[string]interface{}{
+			"provider":        aiResult.Provider,
+			"model":           aiResult.Model,
+			"processing_time": aiResult.ProcessingTime,
+		}
+	}
+
+	// Return the enriched analysis
 	return aiResult.Analysis, nil
 }
 
@@ -195,8 +213,9 @@ func setupAIDocumentCorrelation(ctx context.Context, aiAnalyzer *analyzer.AIAnal
 		return fmt.Errorf("failed to setup document store: %w", err)
 	}
 
-	// Create correlator adapter
-	correlator := correlation.NewCorrelator()
+	// Create correlator adapter with logger
+	logger := GetLogger("ai-setup")
+	correlator := correlation.NewCorrelatorWithLogger(logger)
 	adapter := &CorrelatorAdapter{correlator: correlator}
 
 	// Set up AI analyzer with correlation

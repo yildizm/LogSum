@@ -1,0 +1,20 @@
+patterns:
+  - id: "term_not_found"
+    name: "Missing Promotional Terms"
+    description: "Missing promotional terms in database"
+    type: "error"
+    severity: 4
+    regex: "(?i)(TermNotFoundException|no terms found|missing term)"
+    keywords:
+      - "TermNotFoundException"
+      - "termnotfoundexception"
+      - "no terms found"
+      - "missing term"
+      - "term not found"
+      - "promotional terms"
+      - "promo_id"
+      - "SUMMER2024"
+    tags:
+      - "business"
+      - "promotional"
+      - "database"

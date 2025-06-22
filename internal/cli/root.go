@@ -8,6 +8,7 @@ import (
 	"github.com/spf13/cobra"
 	"github.com/yildizm/LogSum/internal/config"
 	"github.com/yildizm/LogSum/internal/emoji"
+	"github.com/yildizm/LogSum/internal/logger"
 )
 
 var (
@@ -19,6 +20,9 @@ var (
 
 	// Global config instance
 	globalConfig *config.Config
+
+	// Global logger instance
+	mainLogger *logger.Logger
 )
 
 // NewRootCommand creates the root command
@@ -119,6 +123,14 @@ func newVersionCommand(version, commit, date string) *cobra.Command {
 // Global helpers
 func isVerbose() bool {
 	return verbose
+}
+
+// GetLogger returns a logger for the given component
+func GetLogger(component string) *logger.Logger {
+	if mainLogger == nil {
+		mainLogger = logger.NewWithCallback("main", isVerbose)
+	}
+	return mainLogger.WithComponent(component)
 }
 
 func getOutputFormat() string {

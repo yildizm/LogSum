@@ -33,8 +33,9 @@ func NewEngine() *AnalyzerEngine {
 func (e *AnalyzerEngine) Analyze(ctx context.Context, entries []*common.LogEntry) (*Analysis, error) {
 	if len(entries) == 0 {
 		return &Analysis{
-			Patterns: []PatternMatch{},
-			Insights: []Insight{},
+			Patterns:   []PatternMatch{},
+			Insights:   []Insight{},
+			RawEntries: []*common.LogEntry{},
 		}, nil
 	}
 
@@ -43,6 +44,7 @@ func (e *AnalyzerEngine) Analyze(ctx context.Context, entries []*common.LogEntry
 		TotalEntries: len(entries),
 		Patterns:     []PatternMatch{},
 		Insights:     []Insight{},
+		RawEntries:   entries, // Store raw entries for correlation
 	}
 
 	// Sort entries by timestamp for timeline analysis

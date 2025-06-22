@@ -1,0 +1,105 @@
+// Package: github.com/yildizm/LogSum/internal/correlation
+// This is an example file showing how to extend the correlation system with semantic similarity.
+// This is NOT compilable code - it's for documentation purposes only.
+//
+//go:build ignore
+
+package main // Changed to main to avoid compilation as part of correlation package
+
+import (
+	"context"
+	"fmt"
+	"strings"
+)
+
+// SemanticSimilarityEngine implements semantic-based document matching
+type SemanticSimilarityEngine struct {
+	model    string // "bert", "openai", "sentence-transformers"
+	apiKey   string
+	threshold float64
+}
+
+// NewSemanticSimilarityEngine creates a new semantic similarity engine
+func NewSemanticSimilarityEngine(model, apiKey string) *SemanticSimilarityEngine {
+	return &SemanticSimilarityEngine{
+		model:     model,
+		apiKey:    apiKey,
+		threshold: 0.7, // Default semantic similarity threshold
+	}
+}
+
+// Extension to correlator.go - add this method:
+func (c *correlator) performSemanticSearch(ctx context.Context, patternMatch *common.PatternMatch) ([]*DocumentMatch, error) {
+	if c.semanticEngine == nil {
+		return nil, fmt.Errorf("semantic engine not configured")
+	}
+
+	// Build semantic query from pattern/error context
+	query := c.buildSemanticQuery(patternMatch)
+	
+	// Get semantic embeddings for query
+	queryEmbedding, err := c.semanticEngine.getEmbedding(ctx, query)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get query embedding: %w", err)
+	}
+
+	// Search documents using semantic similarity
+	return c.semanticEngine.searchDocuments(ctx, queryEmbedding)
+}
+
+// SemanticVectorizer implements the Vectorizer interface for semantic embeddings
+type SemanticVectorizer struct {
+	model   string
+	apiKey  string
+	client  SemanticClient // HTTP client for embedding API
+}
+
+func (v *SemanticVectorizer) Vectorize(text string) ([]float64, error) {
+	switch v.model {
+	case "openai":
+		return v.getOpenAIEmbedding(text)
+	case "sentence-transformers":
+		return v.getSentenceTransformersEmbedding(text)
+	case "bert":
+		return v.getBertEmbedding(text)
+	default:
+		return nil, fmt.Errorf("unsupported semantic model: %s", v.model)
+	}
+}
+
+// Usage example:
+func ExampleAddSemanticSimilarity() {
+	// 1. Create semantic vectorizer
+	semanticVectorizer := &SemanticVectorizer{
+		model:  "sentence-transformers",
+		apiKey: "your-api-key",
+	}
+
+	// 2. Set up correlator with semantic support
+	correlator := NewCorrelator()
+	correlator.SetVectorStore(vectorStore, semanticVectorizer)
+	
+	// 3. Configure hybrid search with semantic weights
+	config := &HybridSearchConfig{
+		KeywordWeight:  0.4,
+		VectorWeight:   0.3,
+		SemanticWeight: 0.3, // New semantic component
+		EnableSemantic: true,
+		SemanticModel:  "sentence-transformers",
+	}
+	correlator.SetHybridSearchConfig(config)
+}
+
+// Alternative: Completely new similarity algorithm
+type GraphBasedSimilarity struct {
+	knowledgeGraph map[string][]string // Entity relationships
+	entityExtractor EntityExtractor    // Extract entities from text
+}
+
+func (g *GraphBasedSimilarity) CalculateSimilarity(text1, text2 string) float64 {
+	entities1 := g.entityExtractor.Extract(text1)
+	entities2 := g.entityExtractor.Extract(text2)
+	
+	// Calculate graph-based similarity using entity relationships
+	return g.computeGraphSimilarity(entities1, entities2)
+}

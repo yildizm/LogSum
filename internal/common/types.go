@@ -1,8 +1,9 @@
 package common
 
 import (
-	"github.com/yildizm/go-logparser"
 	"strings"
+
+	"github.com/yildizm/go-logparser"
 )
 
 // LogLevel represents the severity of a log entry

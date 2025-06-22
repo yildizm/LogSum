@@ -8,6 +8,7 @@ import (
 
 	"github.com/yildizm/LogSum/internal/ai"
 	"github.com/yildizm/LogSum/internal/common"
+	corrpkg "github.com/yildizm/LogSum/internal/correlation"
 	"github.com/yildizm/go-promptfmt"
 )
 
@@ -317,34 +318,68 @@ func (a *AIAnalyzer) generateRecommendations(ctx context.Context, analysis *comm
 // Helper methods for building prompts
 
 func (a *AIAnalyzer) buildSummaryPrompt(analysis *common.Analysis, entries []*common.LogEntry, docContext *DocumentContext) *promptfmt.Prompt {
-	// Use LogSum-specific pattern for better structure
-	logPattern := LogAnalysis().WithAnalysis(analysis)
+	// Build a human-readable summary prompt (not JSON)
+	pb := promptfmt.New().
+		System("You are a LogSum AI assistant specializing in log analysis. Provide a clear, human-readable summary of the log analysis. Focus on key insights, error patterns, and actionable recommendations.")
 
-	// Add error entries if available
+	// Build analysis context
+	contextInfo := fmt.Sprintf("Log Analysis Summary - Total Entries: %d, Errors: %d, Warnings: %d, Time Range: %s to %s",
+		analysis.TotalEntries,
+		analysis.ErrorCount,
+		analysis.WarnCount,
+		analysis.StartTime.Format(time.RFC3339),
+		analysis.EndTime.Format(time.RFC3339))
+
+	// Add error samples if available
 	if analysis.ErrorCount > 0 {
 		errorEntries := a.extractErrorEntries(entries)
-		logPattern.WithErrorEntries(errorEntries).WithSampleSize(5)
+		sampleSize := min(3, len(errorEntries))
+		if sampleSize > 0 {
+			contextInfo += "\n\nKey Error Samples:\n"
+			for i := 0; i < sampleSize; i++ {
+				entry := errorEntries[i]
+				contextInfo += fmt.Sprintf("- [%s] %s: %s\n",
+					entry.Timestamp.Format(time.RFC3339),
+					entry.Level,
+					entry.Message)
+			}
+		}
 	}
-
-	prompt := logPattern.Build()
 
 	// Add document context if available
 	if docContext != nil && len(docContext.CorrelatedDocuments) > 0 {
 		contextSection := a.buildContextSection(docContext)
 		if contextSection != "" {
-			// Create a new prompt with the context added
-			pb := promptfmt.New().
-				System("You are a LogSum AI assistant specializing in log analysis. Provide structured insights about system health, errors, and operational patterns.").
-				User("%s", prompt.String()).
-				AddContext("documentation", contextSection)
-			if prompt.JSONSchema != nil {
-				pb.ExpectJSON(prompt.JSONSchema)
-			}
-			return pb.Build()
+			contextInfo += "\n\n" + contextSection
 		}
 	}
 
-	return prompt
+	// Add patterns if available
+	if len(analysis.Patterns) > 0 {
+		contextInfo += "\n\nDetected Patterns:\n"
+		for i, pattern := range analysis.Patterns {
+			if i >= 3 {
+				break
+			}
+			contextInfo += fmt.Sprintf("- %s (%d occurrences)\n", pattern.Pattern.Name, pattern.Count)
+		}
+	}
+
+	// Add insights if available
+	if len(analysis.Insights) > 0 {
+		contextInfo += "\n\nKey Insights:\n"
+		for i, insight := range analysis.Insights {
+			if i >= 3 {
+				break
+			}
+			contextInfo += fmt.Sprintf("- %s (%s, %.1f%% confidence)\n",
+				insight.Title, insight.Type, insight.Confidence*100)
+		}
+	}
+
+	return pb.
+		User("Please provide a concise, human-readable summary of this log analysis. Focus on:\n1. Overall system health\n2. Key errors and their potential impact\n3. Notable patterns or trends\n4. Immediate recommendations\n\nAnalysis Data:\n%s", contextInfo).
+		Build()
 }
 
 func (a *AIAnalyzer) buildErrorAnalysisPrompt(errorEntries []*common.LogEntry, analysis *common.Analysis, docContext *DocumentContext) *promptfmt.Prompt {
@@ -352,7 +387,7 @@ func (a *AIAnalyzer) buildErrorAnalysisPrompt(errorEntries []*common.LogEntry, a
 	errorPattern := promptfmt.ErrorAnalysis()
 
 	// Build error samples
-	sampleSize := minInt(10, len(errorEntries))
+	sampleSize := min(10, len(errorEntries))
 	errorSamples := "Sample Error Entries:\n"
 	for i := 0; i < sampleSize; i++ {
 		entry := errorEntries[i]
@@ -404,7 +439,7 @@ func (a *AIAnalyzer) buildRootCausePrompt(analysis *common.Analysis, entries []*
 	// Add error samples
 	errorEntries := a.extractErrorEntries(entries)
 	if len(errorEntries) > 0 {
-		sampleSize := minInt(5, len(errorEntries))
+		sampleSize := min(5, len(errorEntries))
 		problem += "\n\nRecent Errors:\n"
 		for i := 0; i < sampleSize; i++ {
 			entry := errorEntries[i]
@@ -464,17 +499,131 @@ func (a *AIAnalyzer) buildRecommendationPrompt(analysis *common.Analysis, entrie
 	return pb.ExpectJSON(&RecommendationResponse{}).Build()
 }
 
-// buildDocumentContext creates DocumentContext from correlation results
+// buildDocumentContext creates DocumentContext from correlation results including direct error correlations
 func (a *AIAnalyzer) buildDocumentContext(correlationResult interface{}) *DocumentContext {
-	// This is a simple implementation that assumes the correlation result
-	// is in the expected format. In a real implementation, you would
-	// need to properly type-assert and convert the correlation result
-	// to DocumentContext format.
+	// Type-assert to CorrelationResult
+	result, ok := correlationResult.(*corrpkg.CorrelationResult)
+	if !ok || result == nil {
+		return nil
+	}
 
-	// For now, return nil to maintain compatibility
-	// This method should be implemented based on the actual correlation
-	// result structure from the correlation package
-	return nil
+	var contextDocs []ContextDocument
+	tokenCount := 0
+	maxTokens := a.options.MaxContextTokens
+	if maxTokens == 0 {
+		maxTokens = 4000 // Default max tokens
+	}
+
+	// Convert pattern-based correlation results to document context
+	for _, correlation := range result.Correlations {
+		for _, docMatch := range correlation.DocumentMatches {
+			if tokenCount >= maxTokens {
+				break
+			}
+
+			// Create excerpt from document content
+			excerpt := a.limitText(docMatch.Document.Content, 200)
+
+			contextDoc := ContextDocument{
+				Title:           docMatch.Document.Title,
+				Path:            docMatch.Document.Path,
+				MatchedKeywords: docMatch.MatchedKeywords,
+				Score:           docMatch.Score,
+				Excerpt:         excerpt,
+				RelevantSection: docMatch.Highlighted,
+				Source:          "pattern-correlation", // Identify source of correlation
+			}
+
+			contextDocs = append(contextDocs, contextDoc)
+			// Rough token estimate (4 chars per token)
+			tokenCount += len(excerpt) / 4
+		}
+	}
+
+	// NEW: Convert direct error correlation results to document context
+	for _, errorCorrelation := range result.DirectCorrelations {
+		if tokenCount >= maxTokens {
+			break
+		}
+
+		for _, docMatch := range errorCorrelation.DocumentMatches {
+			if tokenCount >= maxTokens {
+				break
+			}
+
+			// Create enhanced excerpt that includes error context
+			excerpt := a.limitText(docMatch.Document.Content, 200)
+
+			// Create a more detailed context document for error correlations
+			contextDoc := ContextDocument{
+				Title:           docMatch.Document.Title,
+				Path:            docMatch.Document.Path,
+				MatchedKeywords: append(docMatch.MatchedKeywords, errorCorrelation.Keywords...),
+				Score:           docMatch.Score,
+				Excerpt:         excerpt,
+				RelevantSection: docMatch.Highlighted,
+				Source:          "direct-error-correlation",            // Identify as direct error correlation
+				ErrorContext:    a.buildErrorContext(errorCorrelation), // NEW: Add error-specific context
+			}
+
+			contextDocs = append(contextDocs, contextDoc)
+			// Rough token estimate (4 chars per token)
+			tokenCount += len(excerpt) / 4
+		}
+	}
+
+	// Sort documents by score (highest first) to prioritize most relevant
+	for i := 0; i < len(contextDocs)-1; i++ {
+		for j := i + 1; j < len(contextDocs); j++ {
+			if contextDocs[i].Score < contextDocs[j].Score {
+				contextDocs[i], contextDocs[j] = contextDocs[j], contextDocs[i]
+			}
+		}
+	}
+
+	// Check if we have any actual correlations
+	if len(contextDocs) == 0 {
+		return nil
+	}
+
+	return &DocumentContext{
+		CorrelatedDocuments: contextDocs,
+		TotalDocuments:      len(contextDocs),
+		TokensUsed:          tokenCount,
+		TruncatedContext:    tokenCount >= maxTokens,
+		DirectErrorCount:    len(result.DirectCorrelations), // NEW: Track direct error correlations
+	}
+}
+
+// buildErrorContext creates contextual information for direct error correlations
+func (a *AIAnalyzer) buildErrorContext(errorCorrelation *corrpkg.ErrorCorrelation) string {
+	if errorCorrelation == nil {
+		return ""
+	}
+
+	var contextBuilder strings.Builder
+
+	// Error type and occurrence info
+	contextBuilder.WriteString(fmt.Sprintf("Error Type: %s", errorCorrelation.ErrorType))
+	if errorCorrelation.MatchCount > 1 {
+		contextBuilder.WriteString(fmt.Sprintf(" (%d occurrences)", errorCorrelation.MatchCount))
+	}
+
+	// Confidence level
+	contextBuilder.WriteString(fmt.Sprintf(", Confidence: %.2f", errorCorrelation.Confidence))
+
+	// Keywords used for correlation
+	if len(errorCorrelation.Keywords) > 0 {
+		contextBuilder.WriteString(fmt.Sprintf(", Keywords: %s", strings.Join(errorCorrelation.Keywords, ", ")))
+	}
+
+	// Sample error message (truncated)
+	if errorCorrelation.Error != nil && errorCorrelation.Error.Message != "" {
+		sampleMessage := a.limitText(errorCorrelation.Error.Message, 100)
+		contextBuilder.WriteString(fmt.Sprintf(", Sample: %s", sampleMessage))
+	}
+
+	return contextBuilder.String()
 }
 
 // buildContextSection creates the context section for prompts
@@ -487,18 +636,42 @@ func (a *AIAnalyzer) buildContextSection(docContext *DocumentContext) string {
 	builder.WriteString("Context: Relevant Documentation\n")
 	builder.WriteString("===============================\n")
 
-	for i, doc := range docContext.CorrelatedDocuments {
-		if i >= 3 { // Limit to top 3 for brevity
+	// Add summary of correlation types
+	if docContext.DirectErrorCount > 0 {
+		builder.WriteString(fmt.Sprintf("Direct error correlations found: %d\n", docContext.DirectErrorCount))
+	}
+
+	for i := range docContext.CorrelatedDocuments {
+		if i >= 5 { // Limit to top 5 for comprehensive context
 			break
 		}
+		doc := &docContext.CorrelatedDocuments[i]
 
-		builder.WriteString(fmt.Sprintf("\n[%d] %s (Score: %.2f)\n", i+1, doc.Title, doc.Score))
+		builder.WriteString(fmt.Sprintf("\n[%d] %s (Score: %.2f)", i+1, doc.Title, doc.Score))
+
+		// Indicate correlation source
+		if doc.Source != "" {
+			switch doc.Source {
+			case "direct-error-correlation":
+				builder.WriteString(" [Direct Error Correlation]")
+			case "pattern-correlation":
+				builder.WriteString(" [Pattern Correlation]")
+			}
+		}
+		builder.WriteString("\n")
+
 		if doc.RelevantSection != "" {
 			builder.WriteString(fmt.Sprintf("Section: %s\n", doc.RelevantSection))
 		}
 		if len(doc.MatchedKeywords) > 0 {
 			builder.WriteString(fmt.Sprintf("Keywords: %s\n", strings.Join(doc.MatchedKeywords, ", ")))
 		}
+
+		// Add error context for direct error correlations
+		if doc.ErrorContext != "" {
+			builder.WriteString(fmt.Sprintf("Error Context: %s\n", doc.ErrorContext))
+		}
+
 		builder.WriteString(fmt.Sprintf("Content: %s\n", doc.Excerpt))
 		builder.WriteString(fmt.Sprintf("Source: %s\n", doc.Path))
 	}
@@ -526,7 +699,8 @@ func (a *AIAnalyzer) extractCitations(docContext *DocumentContext) []SourceCitat
 
 	citations := make([]SourceCitation, 0, len(docContext.CorrelatedDocuments))
 
-	for _, doc := range docContext.CorrelatedDocuments {
+	for i := range docContext.CorrelatedDocuments {
+		doc := &docContext.CorrelatedDocuments[i]
 		citation := SourceCitation{
 			DocumentTitle: doc.Title,
 			DocumentPath:  doc.Path,

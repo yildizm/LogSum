@@ -235,3 +235,38 @@
   tags:
     - "repetition"
     - "warnings"
+
+# Business Logic Patterns
+# - id: "term_not_found"
+#   name: "Missing Promotional Terms"
+#   description: "Missing promotional terms in database"
+#   type: "error"
+#   severity: 4
+#   keywords:
+#     - "termnotfoundexception"
+#     - "no terms found"
+#     - "missing term"
+#     - "term not found"
+#     - "promotional terms"
+#     - "promo_id"
+#   tags:
+#     - "business"
+#     - "promotional"
+#     - "database"
+
+# - id: "promo_processing"
+#   name: "Promotional Processing Error"
+#   description: "Promotional event processing failures"
+#   type: "error"
+#   severity: 3
+#   regex: "(?i)(promo.*error|promotional.*fail|discount.*error|campaign.*error)"
+#   keywords:
+#     - "promo processing"
+#     - "promotional error"
+#     - "discount calculation"
+#     - "campaign failure"
+#     - "promotion failed"
+#   tags:
+#     - "promotional"
+#     - "business"
+#     - "processing"

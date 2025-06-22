@@ -2,6 +2,7 @@ package formatter
 
 import (
 	"fmt"
+	"sort"
 	"strings"
 
 	"github.com/yildizm/LogSum/internal/analyzer"
@@ -42,6 +43,9 @@ func (f *terminalFormatter) Format(analysis *analyzer.Analysis) ([]byte, error) 
 
 	// Recommendations section
 	f.writeTextRecommendations(&b, analysis)
+
+	// AI Analysis section (if available)
+	f.writeAIAnalysis(&b, analysis)
 
 	return []byte(b.String()), nil
 }
@@ -90,14 +94,9 @@ func (f *terminalFormatter) writeTopPatterns(b *strings.Builder, patterns []anal
 	sortedPatterns := make([]analyzer.PatternMatch, len(patterns))
 	copy(sortedPatterns, patterns)
 
-	// Simple bubble sort for small arrays
-	for i := 0; i < len(sortedPatterns)-1; i++ {
-		for j := 0; j < len(sortedPatterns)-i-1; j++ {
-			if sortedPatterns[j].Count < sortedPatterns[j+1].Count {
-				sortedPatterns[j], sortedPatterns[j+1] = sortedPatterns[j+1], sortedPatterns[j]
-			}
-		}
-	}
+	sort.Slice(sortedPatterns, func(i, j int) bool {
+		return sortedPatterns[i].Count > sortedPatterns[j].Count
+	})
 
 	maxPatterns := 5
 	if len(sortedPatterns) < maxPatterns {
@@ -165,4 +164,188 @@ func (f *terminalFormatter) writeHeader(b *strings.Builder) {
 	b.WriteString("╔" + strings.Repeat("═", headerLen+2) + "╗\n")
 	b.WriteString("║ " + header + " ║\n")
 	b.WriteString("╚" + strings.Repeat("═", headerLen+2) + "╝\n\n")
+}
+
+// writeAIAnalysis writes AI-enhanced analysis results
+func (f *terminalFormatter) writeAIAnalysis(b *strings.Builder, analysis *analyzer.Analysis) {
+	if analysis.Context == nil {
+		return
+	}
+
+	aiData := f.extractTerminalAIData(analysis.Context)
+	if !aiData.hasAnyData() {
+		return
+	}
+
+	f.writeTerminalAIHeader(b)
+	f.writeTerminalAISummary(b, aiData.summary, aiData.hasSummary)
+	f.writeTerminalRootCauses(b, aiData.rootCauses, aiData.hasRootCauses)
+	f.writeTerminalRecommendations(b, aiData.recommendations, aiData.hasRecommendations)
+}
+
+// terminalAIData holds extracted AI analysis data for terminal formatting
+type terminalAIData struct {
+	summary            string
+	rootCauses         interface{}
+	recommendations    interface{}
+	hasSummary         bool
+	hasRootCauses      bool
+	hasRecommendations bool
+	hasErrorAnalysis   bool
+}
+
+// hasAnyData checks if any AI analysis data is available
+func (data terminalAIData) hasAnyData() bool {
+	return data.hasSummary || data.hasRootCauses || data.hasRecommendations || data.hasErrorAnalysis
+}
+
+// extractTerminalAIData extracts AI analysis data from context
+func (f *terminalFormatter) extractTerminalAIData(context map[string]interface{}) terminalAIData {
+	summary, hasSummary := context["ai_summary"].(string)
+	rootCauses, hasRootCauses := context["root_causes"]
+	recommendations, hasRecommendations := context["recommendations"]
+	_, hasErrorAnalysis := context["error_analysis"]
+
+	return terminalAIData{
+		summary:            summary,
+		rootCauses:         rootCauses,
+		recommendations:    recommendations,
+		hasSummary:         hasSummary,
+		hasRootCauses:      hasRootCauses,
+		hasRecommendations: hasRecommendations,
+		hasErrorAnalysis:   hasErrorAnalysis,
+	}
+}
+
+// writeTerminalAIHeader writes the AI analysis header
+func (f *terminalFormatter) writeTerminalAIHeader(b *strings.Builder) {
+	aiSymbol := termfmt.GetEmoji("ai", f.opts)
+	if aiSymbol == "" {
+		aiSymbol = "🤖" // Fallback
+	}
+	fmt.Fprintf(b, "\n%s AI Analysis\n", aiSymbol)
+	b.WriteString(strings.Repeat("─", 50) + "\n\n")
+}
+
+// writeTerminalAISummary writes the AI summary section
+func (f *terminalFormatter) writeTerminalAISummary(b *strings.Builder, summary string, hasSummary bool) {
+	if hasSummary && summary != "" {
+		summarySymbol := termfmt.GetEmoji("summary", f.opts)
+		if summarySymbol == "" {
+			summarySymbol = "📝" // Fallback
+		}
+		fmt.Fprintf(b, "%s Summary\n", summarySymbol)
+		b.WriteString(summary + "\n\n")
+	}
+}
+
+// writeTerminalRootCauses writes the root causes section
+func (f *terminalFormatter) writeTerminalRootCauses(b *strings.Builder, rootCauses interface{}, hasRootCauses bool) {
+	f.writeTerminalListSection(b, rootCauses, hasRootCauses, "target", "🎯", "Root Causes", f.buildRootCauseTreeItems)
+}
+
+// buildRootCauseTreeItems builds tree items for root causes
+func (f *terminalFormatter) buildRootCauseTreeItems(rootCausesList []interface{}) []termfmt.TreeItem {
+	items := make([]termfmt.TreeItem, 0, len(rootCausesList))
+	for i, cause := range rootCausesList {
+		causeMap, ok := cause.(map[string]interface{})
+		if !ok {
+			continue
+		}
+
+		title, ok := causeMap["title"].(string)
+		if !ok {
+			continue
+		}
+
+		var children []termfmt.TreeItem
+		if desc, ok := causeMap["description"].(string); ok {
+			children = append(children, termfmt.TreeItem{
+				Label: "Description",
+				Value: desc,
+			})
+		}
+		if confidence, ok := causeMap["confidence"].(float64); ok {
+			confidenceText := fmt.Sprintf("%.1f%%", confidence*100)
+			children = append(children, termfmt.TreeItem{
+				Label: "Confidence",
+				Value: confidenceText,
+			})
+		}
+
+		item := termfmt.TreeItem{
+			Label:    fmt.Sprintf("Cause %d", i+1),
+			Value:    title,
+			Children: children,
+		}
+		items = append(items, item)
+	}
+	return items
+}
+
+// writeTerminalRecommendations writes the recommendations section
+func (f *terminalFormatter) writeTerminalRecommendations(b *strings.Builder, recommendations interface{}, hasRecommendations bool) {
+	f.writeTerminalListSection(b, recommendations, hasRecommendations, "recommendations", "💡", "AI Recommendations", f.buildRecommendationTreeItems)
+}
+
+// writeTerminalListSection is a generic helper to write list sections and eliminate code duplication
+func (f *terminalFormatter) writeTerminalListSection(b *strings.Builder, data interface{}, hasData bool, emojiKey, fallbackEmoji, title string, itemBuilder func([]interface{}) []termfmt.TreeItem) {
+	if !hasData {
+		return
+	}
+
+	dataList, ok := data.([]interface{})
+	if !ok || len(dataList) == 0 {
+		return
+	}
+
+	symbol := termfmt.GetEmoji(emojiKey, f.opts)
+	if symbol == "" {
+		symbol = fallbackEmoji // Fallback
+	}
+	fmt.Fprintf(b, "%s %s\n", symbol, title)
+
+	items := itemBuilder(dataList)
+	if len(items) > 0 {
+		tree := termfmt.TreeViewWithOptions(items, f.opts)
+		b.WriteString(tree + "\n\n")
+	}
+}
+
+// buildRecommendationTreeItems builds tree items for recommendations
+func (f *terminalFormatter) buildRecommendationTreeItems(recList []interface{}) []termfmt.TreeItem {
+	items := make([]termfmt.TreeItem, 0, len(recList))
+	for i, rec := range recList {
+		recMap, ok := rec.(map[string]interface{})
+		if !ok {
+			continue
+		}
+
+		title, ok := recMap["title"].(string)
+		if !ok {
+			continue
+		}
+
+		var children []termfmt.TreeItem
+		if desc, ok := recMap["description"].(string); ok {
+			children = append(children, termfmt.TreeItem{
+				Label: "Description",
+				Value: desc,
+			})
+		}
+		if priority, ok := recMap["priority"].(string); ok {
+			children = append(children, termfmt.TreeItem{
+				Label: "Priority",
+				Value: priority,
+			})
+		}
+
+		item := termfmt.TreeItem{
+			Label:    fmt.Sprintf("Recommendation %d", i+1),
+			Value:    title,
+			Children: children,
+		}
+		items = append(items, item)
+	}
+	return items
 }

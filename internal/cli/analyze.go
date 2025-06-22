@@ -3,6 +3,7 @@ package cli
 import (
 	"bufio"
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"os"
@@ -16,21 +17,24 @@ import (
 	"github.com/yildizm/LogSum/internal/correlation"
 	"github.com/yildizm/LogSum/internal/docstore"
 	"github.com/yildizm/LogSum/internal/formatter"
+	"github.com/yildizm/LogSum/internal/monitor"
 	"github.com/yildizm/LogSum/internal/ui"
 	"github.com/yildizm/go-logparser"
 )
 
 var (
-	analyzeFormat     string
-	analyzePatterns   string
-	analyzeFollow     bool
-	analyzeTimeout    time.Duration
-	analyzeMaxLines   int
-	analyzeNoTUI      bool
-	analyzeOutputFile string
-	analyzeDocsPath   string
-	analyzeCorrelate  bool
-	analyzeAI         bool
+	analyzeFormat      string
+	analyzePatterns    string
+	analyzeFollow      bool
+	analyzeTimeout     time.Duration
+	analyzeMaxLines    int
+	analyzeNoTUI       bool
+	analyzeOutputFile  string
+	analyzeDocsPath    string
+	analyzeCorrelate   bool
+	analyzeAI          bool
+	analyzeMonitor     bool
+	analyzeMonitorFile string
 )
 
 func newAnalyzeCommand() *cobra.Command {
@@ -47,6 +51,8 @@ Examples:
   logsum analyze --format json access.log
   logsum analyze --ai app.log
   logsum analyze --ai --docs ./docs/ app.log
+  logsum analyze --monitor app.log
+  logsum analyze --ai --monitor --monitor-file metrics.json app.log
   cat app.log | logsum analyze
   logsum analyze --patterns ./patterns/ app.log`,
 		Args: cobra.MaximumNArgs(1),
@@ -63,6 +69,8 @@ Examples:
 	cmd.Flags().StringVar(&analyzeDocsPath, "docs", "", "path to documentation directory for correlation")
 	cmd.Flags().BoolVar(&analyzeCorrelate, "correlate", false, "enable error-documentation correlation")
 	cmd.Flags().BoolVar(&analyzeAI, "ai", false, "enable AI-powered analysis with LLM integration")
+	cmd.Flags().BoolVar(&analyzeMonitor, "monitor", false, "enable real-time performance monitoring during analysis")
+	cmd.Flags().StringVar(&analyzeMonitorFile, "monitor-file", "", "save monitoring metrics to file (optional)")
 
 	return cmd
 }
@@ -268,23 +276,45 @@ func runTUIAnalysis(entries []*common.LogEntry, patterns []*common.Pattern) erro
 
 // runCLIAnalysis performs command-line analysis with optional correlation and outputs results.
 func runCLIAnalysis(ctx context.Context, entries []*common.LogEntry, patterns []*common.Pattern) error {
+	// Setup monitoring if enabled
+	var metricsCollector monitor.Collector
+	if analyzeMonitor {
+		var err error
+		metricsCollector, err = setupMonitoring(ctx)
+		if err != nil {
+			if isVerbose() {
+				fmt.Fprintf(os.Stderr, "Warning: failed to setup monitoring: %v\n", err)
+			}
+		} else {
+			defer func() {
+				if err := stopMonitoring(metricsCollector); err != nil && isVerbose() {
+					fmt.Fprintf(os.Stderr, "Warning: failed to stop monitoring: %v\n", err)
+				}
+			}()
+		}
+	}
+
 	// Perform main analysis
-	analysis, err := performAnalysis(ctx, entries, patterns)
+	analysis, err := performAnalysisWithMonitoring(ctx, entries, patterns, metricsCollector)
 	if err != nil {
 		return err
 	}
 
-	// Perform correlation if enabled
-	correlationResult, err := performCorrelationIfEnabled(ctx, analysis)
-	if err != nil {
-		logCorrelationWarning(err)
+	// Perform correlation if enabled OR if AI is enabled (AI always shows correlation summary)
+	var correlationResult *correlation.CorrelationResult
+	if analyzeCorrelate || analyzeAI {
+		var err error
+		correlationResult, err = performCorrelationWithMonitoring(ctx, analysis, metricsCollector)
+		if err != nil {
+			logCorrelationWarning(err)
+		}
 	}
 
 	// Format and output results
 	return formatAndOutputResults(analysis, correlationResult)
 }
 
-// performCorrelationIfEnabled runs document correlation if both correlation and docs path are enabled.
+// performCorrelationIfEnabled runs document correlation if docs path is available and correlation is needed.
 func performCorrelationIfEnabled(ctx context.Context, analysis *analyzer.Analysis) (*correlation.CorrelationResult, error) {
 	if !analyzeCorrelate || analyzeDocsPath == "" {
 		return nil, nil
@@ -388,6 +418,17 @@ func setupDocumentStore(ctx context.Context) (docstore.DocumentStore, error) {
 		return nil, fmt.Errorf("failed to index documents: %w", err)
 	}
 
+	// Debug: Check how many documents were loaded (commented out for production)
+	if isVerbose() {
+		stats, err := store.Stats()
+		if err == nil {
+			fmt.Fprintf(os.Stderr, "Loaded %d documents from %s (total sections: %d, total size: %d bytes)\n",
+				stats.DocumentCount, analyzeDocsPath, stats.SectionCount, stats.TotalSize)
+		} else {
+			fmt.Fprintf(os.Stderr, "Failed to get document stats: %v\n", err)
+		}
+	}
+
 	return store, nil
 }
 
@@ -413,23 +454,44 @@ func formatAndOutputResults(analysis *analyzer.Analysis, correlationResult *corr
 }
 
 // formatCorrelationResults formats correlation results as text.
-// Returns formatted output showing document correlations with patterns.
+// Returns formatted output showing document correlations with patterns and direct errors.
 func formatCorrelationResults(result *correlation.CorrelationResult) []byte {
-	if result == nil || len(result.Correlations) == 0 {
+	if result == nil || (len(result.Correlations) == 0 && len(result.DirectCorrelations) == 0) {
 		return []byte("\n--- Document Correlations ---\nNo correlations found.\n")
 	}
 
 	var output strings.Builder
 	writeCorrelationHeader(&output, result)
-	writeCorrelationDetails(&output, result.Correlations)
+
+	// Write pattern-based correlations
+	if len(result.Correlations) > 0 {
+		writeCorrelationDetails(&output, result.Correlations)
+	}
+
+	// Write direct error correlations
+	if len(result.DirectCorrelations) > 0 {
+		writeDirectCorrelationDetails(&output, result.DirectCorrelations)
+	}
+
 	return []byte(output.String())
 }
 
 // writeCorrelationHeader writes the header section of correlation results.
 func writeCorrelationHeader(output *strings.Builder, result *correlation.CorrelationResult) {
 	output.WriteString("\n--- Document Correlations ---\n")
-	fmt.Fprintf(output, "Found %d correlations out of %d patterns\n\n",
-		result.CorrelatedPatterns, result.TotalPatterns)
+
+	totalCorrelations := result.CorrelatedPatterns + result.CorrelatedErrors
+	switch {
+	case result.TotalPatterns > 0 && result.TotalErrors > 0:
+		fmt.Fprintf(output, "Found %d correlations (%d patterns, %d direct errors)\n\n",
+			totalCorrelations, result.CorrelatedPatterns, result.CorrelatedErrors)
+	case result.TotalPatterns > 0:
+		fmt.Fprintf(output, "Found %d correlations out of %d patterns\n\n",
+			result.CorrelatedPatterns, result.TotalPatterns)
+	case result.TotalErrors > 0:
+		fmt.Fprintf(output, "Found %d direct error correlations\n\n",
+			result.CorrelatedErrors)
+	}
 }
 
 // writeCorrelationDetails writes detailed information for each correlation.
@@ -468,6 +530,29 @@ func writeDocumentMatch(output *strings.Builder, index int, docMatch *correlatio
 	fmt.Fprintf(output, "       Path: %s\n", docMatch.Document.Path)
 	fmt.Fprintf(output, "       Keywords: %s\n",
 		strings.Join(docMatch.MatchedKeywords, ", "))
+}
+
+// writeDirectCorrelationDetails writes detailed information for each direct error correlation.
+func writeDirectCorrelationDetails(output *strings.Builder, correlations []*correlation.ErrorCorrelation) {
+	if len(correlations) > 0 {
+		output.WriteString("Direct Error Correlations:\n\n")
+	}
+
+	for i, correlation := range correlations {
+		writeErrorInfo(output, i+1, correlation)
+		writeDocumentMatches(output, correlation.DocumentMatches)
+		output.WriteString("\n")
+	}
+}
+
+// writeErrorInfo writes error information for a single direct correlation.
+func writeErrorInfo(output *strings.Builder, index int, errorCorrelation *correlation.ErrorCorrelation) {
+	fmt.Fprintf(output, "Error %d: %s\n", index, errorCorrelation.ErrorType)
+	fmt.Fprintf(output, "  Message: %s\n", errorCorrelation.Error.Message)
+	fmt.Fprintf(output, "  Keywords: %s\n", strings.Join(errorCorrelation.Keywords, ", "))
+	fmt.Fprintf(output, "  Match Count: %d\n", errorCorrelation.MatchCount)
+	fmt.Fprintf(output, "  Confidence: %.2f\n", errorCorrelation.Confidence)
+	output.WriteString("  Related Documents:\n")
 }
 
 // handleOutputDestination writes output to file or stdout
@@ -563,4 +648,233 @@ func writeOutputBytesToFile(output []byte, filePath string) error {
 	}
 
 	return nil
+}
+
+// setupMonitoring creates and starts a metrics collector for real-time monitoring
+func setupMonitoring(ctx context.Context) (monitor.Collector, error) {
+	if isVerbose() {
+		fmt.Fprintf(os.Stderr, "📊 Starting real-time monitoring...\n")
+	}
+
+	// Create monitor configuration
+	config := monitor.MonitorConfig{
+		CollectionInterval:      500 * time.Millisecond, // High frequency for real-time feel
+		RetentionPeriod:         1 * time.Hour,          // Keep data for analysis duration
+		MaxDataPoints:           1000,                   // Reasonable limit for analysis
+		BufferSize:              100,                    // Small buffer for responsiveness
+		EnableMemoryMetrics:     true,
+		EnableCPUMetrics:        true,
+		EnableProcessingMetrics: true,
+	}
+
+	collector := monitor.NewWithConfig(config)
+
+	// Start monitoring
+	if err := collector.Start(ctx); err != nil {
+		return nil, fmt.Errorf("failed to start metrics collection: %w", err)
+	}
+
+	// Show initial monitoring message
+	if analyzeMonitor && !isVerbose() {
+		fmt.Fprintf(os.Stderr, "📊 Monitoring enabled - performance metrics will be displayed\n")
+	}
+
+	// Start real-time display if monitoring is enabled
+	if analyzeMonitor {
+		go showRealTimeMetrics(ctx, collector)
+	}
+
+	return collector, nil
+}
+
+// stopMonitoring gracefully stops monitoring and optionally exports metrics
+func stopMonitoring(collector monitor.Collector) error {
+	if collector == nil {
+		return nil
+	}
+
+	if isVerbose() {
+		fmt.Fprintf(os.Stderr, "📊 Stopping monitoring...\n")
+	}
+
+	// Stop the collector
+	if err := collector.Stop(); err != nil {
+		return fmt.Errorf("failed to stop monitoring: %w", err)
+	}
+
+	// Clear the real-time display line
+	if analyzeMonitor {
+		fmt.Fprintf(os.Stderr, "\n")
+	}
+
+	// Export metrics if file specified
+	if analyzeMonitorFile != "" {
+		if err := exportMonitoringMetrics(collector, analyzeMonitorFile); err != nil {
+			return fmt.Errorf("failed to export metrics: %w", err)
+		}
+		if isVerbose() {
+			fmt.Fprintf(os.Stderr, "📊 Metrics exported to: %s\n", analyzeMonitorFile)
+		}
+	}
+
+	return nil
+}
+
+// performAnalysisWithMonitoring wraps the analysis with monitoring if collector is available
+func performAnalysisWithMonitoring(ctx context.Context, entries []*common.LogEntry, patterns []*common.Pattern, collector monitor.Collector) (*analyzer.Analysis, error) {
+	if collector != nil {
+		// Track the entire analysis operation
+		var analysis *analyzer.Analysis
+		err := collector.TrackOperationWithError(monitor.OperationAnalyze, func() error {
+			// Record input metrics
+			metric := monitor.Metric{
+				Name:      "analysis.input_lines",
+				Type:      monitor.MetricTypeGauge,
+				Value:     float64(len(entries)),
+				Timestamp: time.Now(),
+				Labels: map[string]string{
+					"operation": "analyze",
+				},
+			}
+			if err := collector.RecordMetric(&metric); err != nil && isVerbose() {
+				fmt.Fprintf(os.Stderr, "Warning: failed to record input metrics: %v\n", err)
+			}
+
+			var err error
+			analysis, err = performAnalysis(ctx, entries, patterns)
+			return err
+		})
+		return analysis, err
+	}
+
+	// Fallback to regular analysis if no monitoring
+	return performAnalysis(ctx, entries, patterns)
+}
+
+// performCorrelationWithMonitoring wraps correlation with monitoring if collector is available
+func performCorrelationWithMonitoring(ctx context.Context, analysis *analyzer.Analysis, collector monitor.Collector) (*correlation.CorrelationResult, error) {
+	if collector != nil {
+		// Track correlation operation
+		var result *correlation.CorrelationResult
+		err := collector.TrackOperationWithError(monitor.OperationPattern, func() error {
+			var err error
+			result, err = performCorrelationIfEnabled(ctx, analysis)
+			return err
+		})
+		return result, err
+	}
+
+	// Fallback to regular correlation if no monitoring
+	return performCorrelationIfEnabled(ctx, analysis)
+}
+
+// exportMonitoringMetrics exports collected metrics to a file
+func exportMonitoringMetrics(collector monitor.Collector, filename string) error {
+	if collector == nil {
+		return fmt.Errorf("no metrics collector available")
+	}
+
+	// Get final snapshot of metrics
+	snapshot := collector.GetSnapshot()
+
+	// Convert to JSON
+	data, err := json.MarshalIndent(snapshot, "", "  ")
+	if err != nil {
+		return fmt.Errorf("failed to marshal metrics: %w", err)
+	}
+
+	// Write to file using existing helper
+	return writeOutputBytesToFile(data, filename)
+}
+
+// showRealTimeMetrics displays live performance metrics during analysis
+func showRealTimeMetrics(ctx context.Context, collector monitor.Collector) {
+	if collector == nil {
+		return
+	}
+
+	ticker := time.NewTicker(2 * time.Second) // Update every 2 seconds
+	defer ticker.Stop()
+
+	var lastSnapshot monitor.MetricsSnapshot
+	startTime := time.Now()
+
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			if !collector.IsRunning() {
+				return
+			}
+
+			snapshot := collector.GetSnapshot()
+			displayMetricsUpdate(&snapshot, &lastSnapshot, startTime)
+			lastSnapshot = snapshot
+		}
+	}
+}
+
+// displayMetricsUpdate shows a concise real-time metrics update
+func displayMetricsUpdate(current, last *monitor.MetricsSnapshot, startTime time.Time) {
+	elapsed := time.Since(startTime)
+
+	// Clear previous line and show updated metrics
+	fmt.Fprintf(os.Stderr, "\r📊 [%v] Memory: %s | CPU: %d cores, %d goroutines | Operations: %d",
+		formatDuration(elapsed),
+		formatBytes(current.Memory.CurrentAlloc),
+		current.CPU.NumCPU,
+		current.CPU.NumGoroutines,
+		len(current.Operations))
+
+	// Show specific operation performance if available
+	if len(current.Operations) > 0 {
+		var totalDuration time.Duration
+		var totalOps int64
+		for _, op := range current.Operations {
+			// Access timing information directly from OperationMetrics
+			totalDuration += time.Duration(op.TotalTime)
+			totalOps += op.Count
+		}
+
+		if totalDuration > 0 && totalOps > 0 {
+			avgDuration := totalDuration / time.Duration(totalOps)
+			fmt.Fprintf(os.Stderr, " | Ops: %d, Avg: %v", totalOps, formatDuration(avgDuration))
+		}
+	}
+
+	// Add performance indicators
+	if current.Memory.CurrentAlloc > 100*1024*1024 { // > 100MB
+		fmt.Fprintf(os.Stderr, " ⚠️")
+	}
+
+	if current.CPU.NumGoroutines > 50 {
+		fmt.Fprintf(os.Stderr, " 🔄")
+	}
+}
+
+// formatBytes converts bytes to human readable format
+func formatBytes(bytes uint64) string {
+	const unit = 1024
+	if bytes < unit {
+		return fmt.Sprintf("%d B", bytes)
+	}
+	div, exp := int64(unit), 0
+	for n := bytes / unit; n >= unit; n /= unit {
+		div *= unit
+		exp++
+	}
+	return fmt.Sprintf("%.1f %cB",
+		float64(bytes)/float64(div), "KMGTPE"[exp])
+}
+
+// formatDuration formats duration in a compact way
+func formatDuration(d time.Duration) string {
+	if d < time.Second {
+		return fmt.Sprintf("%dms", d.Milliseconds())
+	}
+	if d < time.Minute {
+		return fmt.Sprintf("%.1fs", d.Seconds())
+	}
+	return fmt.Sprintf("%.1fm", d.Minutes())
 }
