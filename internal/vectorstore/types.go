@@ -16,13 +16,14 @@ type VectorEntry struct {
 
 // MemoryStoreOptions configures the in-memory vector store
 type MemoryStoreOptions struct {
-	PersistenceFile  string
-	AutoSave         bool
-	AutoSaveInterval time.Duration
-	MaxVectors       int
-	NormalizeVectors bool
-	EnableCache      bool
-	CacheSize        int
+	PersistenceFile   string
+	AutoSave          bool
+	AutoSaveInterval  time.Duration
+	MaxVectors        int
+	NormalizeVectors  bool
+	EnableCache       bool
+	CacheSize         int
+	CancelCheckPeriod int // Iterations between cancellation checks (default: 100)
 }
 
 // CacheEntry represents a cached similarity calculation
@@ -68,6 +69,13 @@ func WithCache(cacheSize int) MemoryStoreOption {
 	return func(opts *MemoryStoreOptions) {
 		opts.EnableCache = true
 		opts.CacheSize = cacheSize
+	}
+}
+
+// WithCancelCheckPeriod sets how often to check for context cancellation
+func WithCancelCheckPeriod(period int) MemoryStoreOption {
+	return func(opts *MemoryStoreOptions) {
+		opts.CancelCheckPeriod = period
 	}
 }
 

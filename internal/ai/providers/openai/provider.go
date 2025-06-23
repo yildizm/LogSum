@@ -488,9 +488,13 @@ func (p *Provider) setHealthy(healthy bool) {
 }
 
 func (p *Provider) GetModels() ([]ai.Model, error) {
+	return p.GetModelsWithContext(context.Background())
+}
+
+func (p *Provider) GetModelsWithContext(ctx context.Context) ([]ai.Model, error) {
 	endpoint := p.baseURL.JoinPath("/v1/models")
 
-	req, err := http.NewRequest("GET", endpoint.String(), http.NoBody)
+	req, err := http.NewRequestWithContext(ctx, "GET", endpoint.String(), http.NoBody)
 	if err != nil {
 		return nil, ai.NewProviderErrorWithCause(ai.ErrTypeNetwork, "failed to create models request", "openai", err)
 	}

@@ -368,8 +368,13 @@ func performCorrelation(ctx context.Context, analysis *analyzer.Analysis) (*corr
 		fmt.Fprintf(os.Stderr, "Setting up document correlation...\n")
 	}
 
+	// Create timeout context for correlation operations
+	// TODO: This should use configurable timeout from config
+	correlationCtx, cancel := context.WithTimeout(ctx, 60*time.Second)
+	defer cancel()
+
 	// Create document store
-	store, err := setupDocumentStore(ctx)
+	store, err := setupDocumentStore(correlationCtx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to setup document store: %w", err)
 	}
@@ -389,8 +394,8 @@ func performCorrelation(ctx context.Context, analysis *analyzer.Analysis) (*corr
 		fmt.Fprintf(os.Stderr, "Running correlation analysis...\n")
 	}
 
-	// Perform correlation
-	result, err := correlator.Correlate(ctx, analysis)
+	// Perform correlation with timeout context
+	result, err := correlator.Correlate(correlationCtx, analysis)
 	if err != nil {
 		return nil, fmt.Errorf("correlation failed: %w", err)
 	}

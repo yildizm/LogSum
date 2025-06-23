@@ -126,6 +126,38 @@ logsum config init
 logsum analyze --config .logsum.yaml /var/log/app.log
 ```
 
+#### Production Reliability & Timeouts
+
+LogSum provides configurable timeouts for production environments to ensure operations can be cancelled and don't consume unlimited resources:
+
+```yaml
+# .logsum.yaml
+analysis:
+  # AI provider timeout
+  timeout: 60s
+  
+  # Context cancellation timeouts (NEW)
+  vector_timeout: 30s        # Vector search operations  
+  correlation_timeout: 60s   # Error correlation analysis
+  indexing_timeout: 120s     # Document indexing (for large doc sets)
+  cancel_check_period: 100   # Check for cancellation every N iterations
+
+ai:
+  timeout: 30s              # AI provider HTTP requests
+```
+
+**Key Benefits:**
+- **Graceful shutdowns** - All operations respect context cancellation
+- **Resource management** - Bounded CPU/memory usage during large operations  
+- **Timeout controls** - Network calls and long-running processes have limits
+- **Production safety** - No runaway vector indexing or correlation analysis
+
+**Default Values:**
+- Vector operations: 30 seconds
+- Correlation analysis: 60 seconds  
+- Document indexing: 120 seconds
+- Cancellation checks: Every 100 iterations
+
 ### RAG (Retrieval-Augmented Generation)
 LogSum's RAG system combines AI with your team's knowledge:
 

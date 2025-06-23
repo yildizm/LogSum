@@ -138,6 +138,13 @@ func (c *correlator) indexDocumentsWithVectors(ctx context.Context) error {
 
 	// Index each document
 	for _, doc := range allDocs {
+		// Check for context cancellation before processing each document
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		default:
+		}
+
 		vector, err := c.vectorizer.Vectorize(doc.Content)
 		if err != nil {
 			continue // Skip failed vectorizations
@@ -614,6 +621,13 @@ func (c *correlator) CorrelateDirectErrors(ctx context.Context, entries []*commo
 	errorGroups := c.groupSimilarErrors(entries)
 
 	for errorType, errorGroup := range errorGroups {
+		// Check for context cancellation before processing each error group
+		select {
+		case <-ctx.Done():
+			return correlations, ctx.Err()
+		default:
+		}
+
 		// Extract keywords from the representative error
 		representative := errorGroup[0]
 		keywords := c.extractor.ExtractFromLogEntry(representative)

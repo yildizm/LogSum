@@ -1,6 +1,7 @@
 package vectorstore
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -12,11 +13,12 @@ import (
 // NewMemoryStore creates a new in-memory vector store
 func NewMemoryStore(options ...MemoryStoreOption) *MemoryStore {
 	opts := MemoryStoreOptions{
-		AutoSaveInterval: 5 * time.Minute,
-		MaxVectors:       10000,
-		NormalizeVectors: false,
-		EnableCache:      false,
-		CacheSize:        1000,
+		AutoSaveInterval:  5 * time.Minute,
+		MaxVectors:        10000,
+		NormalizeVectors:  false,
+		EnableCache:       false,
+		CacheSize:         1000,
+		CancelCheckPeriod: 100, // Default: check every 100 iterations
 	}
 
 	for _, option := range options {
@@ -38,7 +40,7 @@ func NewMemoryStore(options ...MemoryStoreOption) *MemoryStore {
 	// Start auto-save routine if enabled
 	if opts.AutoSave && opts.AutoSaveInterval > 0 {
 		store.ticker = time.NewTicker(opts.AutoSaveInterval)
-		go store.autoSaveRoutine()
+		go store.autoSaveRoutine(context.Background())
 	}
 
 	return store
@@ -112,6 +114,78 @@ func (ms *MemoryStore) Search(vector []float32, topK int) ([]SearchResult, error
 	}
 
 	// Sort by similarity (descending)
+	sort.Slice(results, func(i, j int) bool {
+		return results[i].score > results[j].score
+	})
+
+	// Return top K results
+	if topK > len(results) {
+		topK = len(results)
+	}
+
+	searchResults := make([]SearchResult, topK)
+	for i := 0; i < topK; i++ {
+		searchResults[i] = results[i].entry
+	}
+
+	return searchResults, nil
+}
+
+// SearchWithContext finds the most similar vectors using cosine similarity with context cancellation support
+func (ms *MemoryStore) SearchWithContext(ctx context.Context, vector []float32, topK int) ([]SearchResult, error) {
+	ms.mu.RLock()
+	defer ms.mu.RUnlock()
+
+	if len(ms.vectors) == 0 {
+		return []SearchResult{}, nil
+	}
+
+	// Normalize query vector if store normalizes vectors
+	queryVector := vector
+	if ms.options.NormalizeVectors {
+		queryVector = NormalizeVector(vector)
+	}
+
+	// Calculate similarities for all vectors
+	type scoredResult struct {
+		entry SearchResult
+		score float32
+	}
+
+	results := make([]scoredResult, 0, len(ms.vectors))
+	count := 0
+	checkPeriod := ms.options.CancelCheckPeriod
+	if checkPeriod <= 0 {
+		checkPeriod = 100 // Fallback default
+	}
+
+	for _, entry := range ms.vectors {
+		// Check for context cancellation at configured intervals
+		count++
+		if count%checkPeriod == 0 {
+			select {
+			case <-ctx.Done():
+				return nil, ctx.Err()
+			default:
+			}
+		}
+
+		similarity := ms.getCachedSimilarity(queryVector, entry.Vector, entry.ID)
+
+		result := SearchResult{
+			ID:     entry.ID,
+			Score:  similarity,
+			Text:   entry.Text,
+			Vector: entry.Vector,
+		}
+
+		results = append(results, scoredResult{
+			entry: result,
+			score: similarity,
+		})
+	}
+
+	// Sort by similarity score (descending)
 	sort.Slice(results, func(i, j int) bool {
 		return results[i].score > results[j].score
 	})
@@ -210,9 +284,11 @@ func (ms *MemoryStore) LoadFromFile(filename string) error {
 }
 
 // autoSaveRoutine runs the automatic save routine
-func (ms *MemoryStore) autoSaveRoutine() {
+func (ms *MemoryStore) autoSaveRoutine(ctx context.Context) {
 	for {
 		select {
+		case <-ctx.Done():
+			return
 		case <-ms.ticker.C:
 			if ms.options.PersistenceFile != "" {
 				if err := ms.SaveToFile(ms.options.PersistenceFile); err != nil {

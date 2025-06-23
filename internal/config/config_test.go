@@ -69,7 +69,10 @@ func TestConfigValidation(t *testing.T) {
 		{
 			name: "invalid max entries",
 			config: &Config{
-				Analysis: AnalysisConfig{MaxEntries: 0},
+				Analysis: AnalysisConfig{
+					MaxEntries:        0,
+					CancelCheckPeriod: 100, // Add required field
+				},
 			},
 			wantErr: true,
 			errMsg:  "max_entries must be greater than 0",
@@ -78,8 +81,9 @@ func TestConfigValidation(t *testing.T) {
 			name: "invalid timeline buckets",
 			config: &Config{
 				Analysis: AnalysisConfig{
-					MaxEntries:      100,
-					TimelineBuckets: 0,
+					MaxEntries:        100,
+					TimelineBuckets:   0,
+					CancelCheckPeriod: 100, // Add required field
 				},
 			},
 			wantErr: true,
@@ -90,10 +94,11 @@ func TestConfigValidation(t *testing.T) {
 			config: &Config{
 				AI: AIConfig{MaxRetries: -1},
 				Analysis: AnalysisConfig{
-					MaxEntries:      100,
-					TimelineBuckets: 10,
-					BufferSize:      1024,
-					MaxLineLength:   1024,
+					MaxEntries:        100,
+					TimelineBuckets:   10,
+					BufferSize:        1024,
+					MaxLineLength:     1024,
+					CancelCheckPeriod: 100, // Add required field
 				},
 			},
 			wantErr: true,

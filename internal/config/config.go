@@ -60,6 +60,12 @@ type AnalysisConfig struct {
 	BufferSize      int           `yaml:"buffer_size" json:"buffer_size"`
 	MaxLineLength   int           `yaml:"max_line_length" json:"max_line_length"`
 	StrictMode      bool          `yaml:"strict_mode" json:"strict_mode"`
+
+	// Context timeout configurations
+	VectorTimeout      time.Duration `yaml:"vector_timeout" json:"vector_timeout"`           // Vector operations timeout
+	CorrelationTimeout time.Duration `yaml:"correlation_timeout" json:"correlation_timeout"` // Correlation analysis timeout
+	IndexingTimeout    time.Duration `yaml:"indexing_timeout" json:"indexing_timeout"`       // Document indexing timeout
+	CancelCheckPeriod  int           `yaml:"cancel_check_period" json:"cancel_check_period"` // Iterations between cancellation checks
 }
 
 // DefaultConfig returns a configuration with sensible defaults
@@ -102,13 +108,35 @@ func DefaultConfig() *Config {
 			BufferSize:      4096,
 			MaxLineLength:   1024 * 1024, // 1MB
 			StrictMode:      false,
+
+			// Context timeout defaults
+			VectorTimeout:      30 * time.Second,  // Vector search operations
+			CorrelationTimeout: 60 * time.Second,  // Error correlation analysis
+			IndexingTimeout:    120 * time.Second, // Document indexing (longer for large sets)
+			CancelCheckPeriod:  100,               // Check for cancellation every 100 iterations
 		},
 	}
 }
 
 // Validate validates the configuration
 func (c *Config) Validate() error {
-	// Validate AI provider
+	if err := c.validateAIConfig(); err != nil {
+		return err
+	}
+	if err := c.validateOutputConfig(); err != nil {
+		return err
+	}
+	if err := c.validateAnalysisConfig(); err != nil {
+		return err
+	}
+	if err := c.validateTimeoutConfig(); err != nil {
+		return err
+	}
+	return nil
+}
+
+// validateAIConfig validates AI-related configuration
+func (c *Config) validateAIConfig() error {
 	if c.AI.Provider != "" {
 		validProviders := map[string]bool{
 			"ollama":    true,
@@ -119,8 +147,14 @@ func (c *Config) Validate() error {
 			return fmt.Errorf("invalid AI provider: %s (must be one of: ollama, openai, anthropic)", c.AI.Provider)
 		}
 	}
+	if c.AI.MaxRetries < 0 {
+		return fmt.Errorf("max_retries must be non-negative")
+	}
+	return nil
+}
 
-	// Validate output format
+// validateOutputConfig validates output-related configuration
+func (c *Config) validateOutputConfig() error {
 	if c.Output.DefaultFormat != "" {
 		validFormats := map[string]bool{
 			"json":     true,
@@ -132,8 +166,6 @@ func (c *Config) Validate() error {
 			return fmt.Errorf("invalid output format: %s (must be one of: json, text, markdown, csv)", c.Output.DefaultFormat)
 		}
 	}
-
-	// Validate color mode
 	if c.Output.ColorMode != "" {
 		validColorModes := map[string]bool{
 			"auto":   true,
@@ -144,8 +176,11 @@ func (c *Config) Validate() error {
 			return fmt.Errorf("invalid color mode: %s (must be one of: auto, always, never)", c.Output.ColorMode)
 		}
 	}
+	return nil
+}
 
-	// Validate numeric values
+// validateAnalysisConfig validates analysis-related configuration
+func (c *Config) validateAnalysisConfig() error {
 	if c.Analysis.MaxEntries < 1 {
 		return fmt.Errorf("max_entries must be greater than 0")
 	}
@@ -158,9 +193,22 @@ func (c *Config) Validate() error {
 	if c.Analysis.MaxLineLength < 1 {
 		return fmt.Errorf("max_line_length must be greater than 0")
 	}
-	if c.AI.MaxRetries < 0 {
-		return fmt.Errorf("max_retries must be non-negative")
-	}
+	return nil
+}
 
+// validateTimeoutConfig validates timeout-related configuration
+func (c *Config) validateTimeoutConfig() error {
+	if c.Analysis.VectorTimeout < 0 {
+		return fmt.Errorf("vector_timeout must be non-negative")
+	}
+	if c.Analysis.CorrelationTimeout < 0 {
+		return fmt.Errorf("correlation_timeout must be non-negative")
+	}
+	if c.Analysis.IndexingTimeout < 0 {
+		return fmt.Errorf("indexing_timeout must be non-negative")
+	}
+	if c.Analysis.CancelCheckPeriod < 1 {
+		return fmt.Errorf("cancel_check_period must be greater than 0")
+	}
 	return nil
 }
