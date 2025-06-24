@@ -226,3 +226,25 @@ type AIAnalyzerOptions struct {
 	// MaxConcurrentRequests limits concurrent AI requests
 	MaxConcurrentRequests int
 }
+
+// DefaultAIAnalyzerOptions returns sensible defaults for AI analysis
+func DefaultAIAnalyzerOptions() *AIAnalyzerOptions {
+	return &AIAnalyzerOptions{
+		MaxTokensPerRequest:     2000,
+		EnableErrorAnalysis:     true,
+		EnableRootCauseAnalysis: true,
+		EnableRecommendations:   true,
+		IncludeContext:          true,
+		EnableDocumentContext:   false,
+		MaxContextTokens:        1000,
+		MinConfidence:           0.6,
+		MaxConcurrentRequests:   3,
+	}
+}
+
+// DefaultAIAnalyzerOptionsWithProvider creates AI analyzer options with a provider and defaults
+func DefaultAIAnalyzerOptionsWithProvider(provider ai.Provider) *AIAnalyzerOptions {
+	options := DefaultAIAnalyzerOptions()
+	options.Provider = provider
+	return options
+}

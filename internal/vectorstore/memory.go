@@ -40,7 +40,9 @@ func NewMemoryStore(options ...MemoryStoreOption) *MemoryStore {
 	// Start auto-save routine if enabled
 	if opts.AutoSave && opts.AutoSaveInterval > 0 {
 		store.ticker = time.NewTicker(opts.AutoSaveInterval)
-		go store.autoSaveRoutine(context.Background())
+		store.autoSaveCtx, store.autoSaveCancel = context.WithCancel(context.Background())
+		store.autoSaveWg.Add(1)
+		go store.autoSaveRoutine(store.autoSaveCtx)
 	}
 
 	return store
@@ -221,10 +223,37 @@ func (ms *MemoryStore) Close() error {
 	ms.mu.Lock()
 	defer ms.mu.Unlock()
 
-	// Stop auto-save routine
+	// Stop auto-save routine gracefully
 	if ms.ticker != nil {
 		ms.ticker.Stop()
-		ms.done <- true
+
+		// Cancel the auto-save context
+		if ms.autoSaveCancel != nil {
+			ms.autoSaveCancel()
+		}
+
+		// Wait for auto-save routine to finish with timeout
+		done := make(chan struct{})
+		go func() {
+			ms.autoSaveWg.Wait()
+			close(done)
+		}()
+
+		// Wait up to 5 seconds for graceful shutdown
+		select {
+		case <-done:
+			// Auto-save routine finished gracefully
+		case <-time.After(5 * time.Second):
+			// Timeout - log warning but continue
+			// In production, you might want to use a logger here
+		}
+
+		// Legacy channel signal for backward compatibility
+		select {
+		case ms.done <- true:
+		default:
+			// Channel might be closed or full, ignore
+		}
 	}
 
 	// Save to file if persistence is enabled
@@ -285,6 +314,8 @@ func (ms *MemoryStore) LoadFromFile(filename string) error {
 
 // autoSaveRoutine runs the automatic save routine
 func (ms *MemoryStore) autoSaveRoutine(ctx context.Context) {
+	defer ms.autoSaveWg.Done()
+
 	for {
 		select {
 		case <-ctx.Done():

@@ -37,35 +37,6 @@ func (ca *CorrelatorAdapter) SetDocumentStore(store any) error {
 	return fmt.Errorf("invalid document store type")
 }
 
-// AIAnalysisConfig holds configuration for AI-enhanced analysis.
-type AIAnalysisConfig struct {
-	Provider                ai.Provider
-	MaxTokensPerRequest     int
-	EnableErrorAnalysis     bool
-	EnableRootCauseAnalysis bool
-	EnableRecommendations   bool
-	IncludeContext          bool
-	EnableDocumentContext   bool
-	MaxContextTokens        int
-	MinConfidence           float64
-	MaxConcurrentRequests   int
-}
-
-// DefaultAIAnalysisConfig returns sensible defaults for AI analysis.
-func DefaultAIAnalysisConfig() *AIAnalysisConfig {
-	return &AIAnalysisConfig{
-		MaxTokensPerRequest:     2000,
-		EnableErrorAnalysis:     true,
-		EnableRootCauseAnalysis: true,
-		EnableRecommendations:   true,
-		IncludeContext:          true,
-		EnableDocumentContext:   false,
-		MaxContextTokens:        1000,
-		MinConfidence:           0.6,
-		MaxConcurrentRequests:   3,
-	}
-}
-
 // performAIAnalysis runs AI-enhanced analysis using the provided configuration.
 func performAIAnalysis(ctx context.Context, baseEngine analyzer.Analyzer, entries []*common.LogEntry) (*analyzer.Analysis, error) {
 	cfg := GetGlobalConfig()
@@ -76,19 +47,15 @@ func performAIAnalysis(ctx context.Context, baseEngine analyzer.Analyzer, entrie
 		return nil, fmt.Errorf("failed to create AI provider: %w", err)
 	}
 
-	// Create AI analysis configuration
-	aiConfig := DefaultAIAnalysisConfig()
-	aiConfig.Provider = provider
-	aiConfig.EnableDocumentContext = analyzeCorrelate && analyzeDocsPath != ""
+	// Create AI analyzer options with provider
+	aiOptions := analyzer.DefaultAIAnalyzerOptionsWithProvider(provider)
+	aiOptions.EnableDocumentContext = analyzeCorrelate && analyzeDocsPath != ""
 
 	// Create AI analyzer
-	aiAnalyzer, err := createAIAnalyzer(baseEngine, aiConfig)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create AI analyzer: %w", err)
-	}
+	aiAnalyzer := analyzer.NewAIAnalyzer(baseEngine, aiOptions)
 
 	// Set up document correlation if enabled
-	if aiConfig.EnableDocumentContext {
+	if aiOptions.EnableDocumentContext {
 		if err := setupAIDocumentCorrelation(ctx, aiAnalyzer); err != nil {
 			if isVerbose() {
 				fmt.Fprintf(os.Stderr, "Warning: failed to setup document correlation: %v\n", err)
@@ -122,29 +89,6 @@ func performAIAnalysis(ctx context.Context, baseEngine analyzer.Analyzer, entrie
 
 	// Return the enriched analysis
 	return aiResult.Analysis, nil
-}
-
-// createAIAnalyzer creates an AI analyzer with the provided configuration.
-func createAIAnalyzer(baseEngine analyzer.Analyzer, analysisConfig *AIAnalysisConfig) (*analyzer.AIAnalyzer, error) {
-	if analysisConfig.Provider == nil {
-		return nil, fmt.Errorf("AI provider is required")
-	}
-
-	// Convert to analyzer options
-	aiOptions := &analyzer.AIAnalyzerOptions{
-		Provider:                analysisConfig.Provider,
-		MaxTokensPerRequest:     analysisConfig.MaxTokensPerRequest,
-		EnableErrorAnalysis:     analysisConfig.EnableErrorAnalysis,
-		EnableRootCauseAnalysis: analysisConfig.EnableRootCauseAnalysis,
-		EnableRecommendations:   analysisConfig.EnableRecommendations,
-		IncludeContext:          analysisConfig.IncludeContext,
-		EnableDocumentContext:   analysisConfig.EnableDocumentContext,
-		MaxContextTokens:        analysisConfig.MaxContextTokens,
-		MinConfidence:           analysisConfig.MinConfidence,
-		MaxConcurrentRequests:   analysisConfig.MaxConcurrentRequests,
-	}
-
-	return analyzer.NewAIAnalyzer(baseEngine, aiOptions), nil
 }
 
 // createAIProvider creates an AI provider based on configuration.

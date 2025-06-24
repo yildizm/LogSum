@@ -4,12 +4,14 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/yildizm/LogSum/internal/ai"
 	"github.com/yildizm/LogSum/internal/common"
 	corrpkg "github.com/yildizm/LogSum/internal/correlation"
 	"github.com/yildizm/go-promptfmt"
+	"golang.org/x/sync/semaphore"
 )
 
 // DocumentCorrelator is an interface for correlating analysis results with documentation
@@ -23,6 +25,7 @@ type AIAnalyzer struct {
 	baseAnalyzer Analyzer
 	options      *AIAnalyzerOptions
 	correlator   DocumentCorrelator
+	semaphore    *semaphore.Weighted // For limiting concurrent AI requests
 }
 
 // NewAIAnalyzer creates a new AI-enhanced analyzer
@@ -41,10 +44,22 @@ func NewAIAnalyzer(baseAnalyzer Analyzer, options *AIAnalyzerOptions) *AIAnalyze
 		}
 	}
 
+	// Set default values for zero-valued fields
+	if options.MaxConcurrentRequests == 0 {
+		options.MaxConcurrentRequests = 3
+	}
+	if options.MaxTokensPerRequest == 0 {
+		options.MaxTokensPerRequest = 2000
+	}
+	if options.MaxContextTokens == 0 {
+		options.MaxContextTokens = 1000
+	}
+
 	return &AIAnalyzer{
 		baseAnalyzer: baseAnalyzer,
 		options:      options,
 		correlator:   nil, // Will be set via SetCorrelator
+		semaphore:    semaphore.NewWeighted(int64(options.MaxConcurrentRequests)),
 	}
 }
 
@@ -115,76 +130,120 @@ func (a *AIAnalyzer) performAIAnalysis(ctx context.Context, aiAnalysis *AIAnalys
 	}
 	aiAnalysis.AISummary = summary
 
-	// Perform error analysis
-	a.performErrorAnalysis(ctx, aiAnalysis, baseAnalysis, entries, documentContext)
+	// Perform AI operations concurrently with request limiting
+	return a.executeConcurrentAnalysis(ctx, aiAnalysis, baseAnalysis, entries, documentContext)
+}
 
-	// Perform root cause analysis
-	a.performRootCauseAnalysis(ctx, aiAnalysis, baseAnalysis, entries, documentContext)
+// executeConcurrentAnalysis runs AI analysis tasks concurrently with proper synchronization
+func (a *AIAnalyzer) executeConcurrentAnalysis(ctx context.Context, aiAnalysis *AIAnalysis, baseAnalysis *common.Analysis, entries []*common.LogEntry, documentContext *DocumentContext) error {
+	var wg sync.WaitGroup
+	var mu sync.Mutex
 
-	// Generate recommendations
-	a.performRecommendationAnalysis(ctx, aiAnalysis, baseAnalysis, entries, documentContext)
+	// Error analysis
+	if a.options.EnableErrorAnalysis && baseAnalysis.ErrorCount > 0 {
+		wg.Add(1)
+		go a.performErrorAnalysis(ctx, &wg, &mu, aiAnalysis, baseAnalysis, entries, documentContext)
+	}
 
+	// Root cause analysis
+	if a.options.EnableRootCauseAnalysis {
+		wg.Add(1)
+		go a.performRootCauseAnalysis(ctx, &wg, &mu, aiAnalysis, baseAnalysis, entries, documentContext)
+	}
+
+	// Recommendations
+	if a.options.EnableRecommendations {
+		wg.Add(1)
+		go a.performRecommendationAnalysis(ctx, &wg, &mu, aiAnalysis, baseAnalysis, entries, documentContext)
+	}
+
+	// Wait for all concurrent operations to complete
+	wg.Wait()
 	return nil
 }
 
-// performErrorAnalysis handles error analysis with source citations
-func (a *AIAnalyzer) performErrorAnalysis(ctx context.Context, aiAnalysis *AIAnalysis, baseAnalysis *common.Analysis, entries []*common.LogEntry, documentContext *DocumentContext) {
-	if !a.options.EnableErrorAnalysis || baseAnalysis.ErrorCount == 0 {
-		return
-	}
+// performErrorAnalysis handles error analysis in a goroutine
+func (a *AIAnalyzer) performErrorAnalysis(ctx context.Context, wg *sync.WaitGroup, mu *sync.Mutex, aiAnalysis *AIAnalysis, baseAnalysis *common.Analysis, entries []*common.LogEntry, documentContext *DocumentContext) {
+	a.runConcurrentAnalysis(ctx, wg, "Error analysis", func() error {
+		errorAnalysis, err := a.analyzeErrors(ctx, baseAnalysis, entries, documentContext)
+		if err != nil {
+			return err
+		}
 
-	errorAnalysis, err := a.analyzeErrors(ctx, baseAnalysis, entries, documentContext)
-	if err != nil {
-		fmt.Printf("Error analysis failed: %v\n", err)
-		return
-	}
+		if documentContext != nil {
+			errorAnalysis.SourceCitations = a.extractCitations(documentContext)
+		}
 
-	if documentContext != nil {
-		errorAnalysis.SourceCitations = a.extractCitations(documentContext)
-	}
-	aiAnalysis.ErrorAnalysis = errorAnalysis
+		mu.Lock()
+		aiAnalysis.ErrorAnalysis = errorAnalysis
+		mu.Unlock()
+		return nil
+	})
 }
 
-// performRootCauseAnalysis handles root cause analysis with source citations
-func (a *AIAnalyzer) performRootCauseAnalysis(ctx context.Context, aiAnalysis *AIAnalysis, baseAnalysis *common.Analysis, entries []*common.LogEntry, documentContext *DocumentContext) {
-	if !a.options.EnableRootCauseAnalysis {
+// runConcurrentAnalysis is a helper to reduce duplication in analysis methods
+func (a *AIAnalyzer) runConcurrentAnalysis(ctx context.Context, wg *sync.WaitGroup, taskName string, workFn func() error) {
+	defer wg.Done()
+	if err := a.semaphore.Acquire(ctx, 1); err != nil {
 		return
 	}
+	defer a.semaphore.Release(1)
 
-	rootCauses, err := a.identifyRootCauses(ctx, baseAnalysis, entries, documentContext)
-	if err != nil {
-		fmt.Printf("Root cause analysis failed: %v\n", err)
-		return
+	if err := workFn(); err != nil {
+		fmt.Printf("%s failed: %v\n", taskName, err)
 	}
-
-	if documentContext != nil {
-		citations := a.extractCitations(documentContext)
-		for i := range rootCauses {
-			rootCauses[i].SourceCitations = citations
-		}
-	}
-	aiAnalysis.RootCauses = rootCauses
 }
 
-// performRecommendationAnalysis handles recommendation generation with source citations
-func (a *AIAnalyzer) performRecommendationAnalysis(ctx context.Context, aiAnalysis *AIAnalysis, baseAnalysis *common.Analysis, entries []*common.LogEntry, documentContext *DocumentContext) {
-	if !a.options.EnableRecommendations {
-		return
-	}
+// performRootCauseAnalysis handles root cause analysis in a goroutine
+func (a *AIAnalyzer) performRootCauseAnalysis(ctx context.Context, wg *sync.WaitGroup, mu *sync.Mutex, aiAnalysis *AIAnalysis, baseAnalysis *common.Analysis, entries []*common.LogEntry, documentContext *DocumentContext) {
+	runSliceAnalysis(a, ctx, wg, mu, "Root cause analysis",
+		a.identifyRootCauses,
+		func(result []RootCause) { aiAnalysis.RootCauses = result },
+		func(items []RootCause, citations []SourceCitation) {
+			for i := range items {
+				items[i].SourceCitations = citations
+			}
+		},
+		baseAnalysis, entries, documentContext)
+}
 
-	recommendations, err := a.generateRecommendations(ctx, baseAnalysis, entries, documentContext)
-	if err != nil {
-		fmt.Printf("Recommendation generation failed: %v\n", err)
-		return
-	}
+// performRecommendationAnalysis handles recommendation generation in a goroutine
+func (a *AIAnalyzer) performRecommendationAnalysis(ctx context.Context, wg *sync.WaitGroup, mu *sync.Mutex, aiAnalysis *AIAnalysis, baseAnalysis *common.Analysis, entries []*common.LogEntry, documentContext *DocumentContext) {
+	runSliceAnalysis(a, ctx, wg, mu, "Recommendation generation",
+		a.generateRecommendations,
+		func(result []Recommendation) { aiAnalysis.Recommendations = result },
+		func(items []Recommendation, citations []SourceCitation) {
+			for i := range items {
+				items[i].SourceCitations = citations
+			}
+		},
+		baseAnalysis, entries, documentContext)
+}
 
-	if documentContext != nil {
-		citations := a.extractCitations(documentContext)
-		for i := range recommendations {
-			recommendations[i].SourceCitations = citations
+// runSliceAnalysis is a generic helper for slice-based analysis operations
+func runSliceAnalysis[T any](
+	a *AIAnalyzer, ctx context.Context, wg *sync.WaitGroup, mu *sync.Mutex, taskName string,
+	analyzeFunc func(context.Context, *common.Analysis, []*common.LogEntry, *DocumentContext) ([]T, error),
+	setResult func([]T),
+	setCitations func([]T, []SourceCitation),
+	baseAnalysis *common.Analysis, entries []*common.LogEntry, documentContext *DocumentContext,
+) {
+	a.runConcurrentAnalysis(ctx, wg, taskName, func() error {
+		result, err := analyzeFunc(ctx, baseAnalysis, entries, documentContext)
+		if err != nil {
+			return err
 		}
-	}
-	aiAnalysis.Recommendations = recommendations
+
+		if documentContext != nil {
+			citations := a.extractCitations(documentContext)
+			setCitations(result, citations)
+		}
+
+		mu.Lock()
+		setResult(result)
+		mu.Unlock()
+		return nil
+	})
 }
 
 // generateSummary creates an AI-generated summary of the analysis

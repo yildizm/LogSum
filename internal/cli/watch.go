@@ -9,6 +9,7 @@ import (
 	"os/signal"
 	"path/filepath"
 	"strings"
+	"sync"
 	"syscall"
 
 	"github.com/fsnotify/fsnotify"
@@ -20,6 +21,26 @@ import (
 var (
 	watchPatterns string
 )
+
+// parserState encapsulates the parser with thread-safe access
+type parserState struct {
+	mu     sync.RWMutex
+	parser logparser.Parser
+}
+
+// getParser safely returns the current parser
+func (ps *parserState) getParser() logparser.Parser {
+	ps.mu.RLock()
+	defer ps.mu.RUnlock()
+	return ps.parser
+}
+
+// setParser safely updates the parser
+func (ps *parserState) setParser(parser logparser.Parser) {
+	ps.mu.Lock()
+	defer ps.mu.Unlock()
+	ps.parser = parser
+}
 
 func newWatchCommand() *cobra.Command {
 	cmd := &cobra.Command{
@@ -198,8 +219,8 @@ func runWatchLoop(watcher *fsnotify.Watcher, file *os.File) error {
 	signals := make(chan os.Signal, 1)
 	signal.Notify(signals, syscall.SIGINT, syscall.SIGTERM)
 
-	// Create parser for auto-detection
-	var detectedParser logparser.Parser
+	// Create thread-safe parser state for auto-detection
+	parserSt := &parserState{}
 
 	// Watch loop
 	for {
@@ -217,13 +238,14 @@ func runWatchLoop(watcher *fsnotify.Watcher, file *os.File) error {
 			if !ok {
 				return fmt.Errorf("watcher events channel closed")
 			}
-			updatedParser, err := handleWatchEvent(event, file, detectedParser)
+			currentParser := parserSt.getParser()
+			updatedParser, err := handleWatchEvent(event, file, currentParser)
 			if err != nil {
 				if isVerbose() {
 					fmt.Fprintf(os.Stderr, "Error handling event: %v\n", err)
 				}
 			} else {
-				detectedParser = updatedParser
+				parserSt.setParser(updatedParser)
 			}
 
 		case err, ok := <-watcher.Errors:

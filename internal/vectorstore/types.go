@@ -1,6 +1,7 @@
 package vectorstore
 
 import (
+	"context"
 	"sync"
 	"time"
 )
@@ -89,6 +90,11 @@ type MemoryStore struct {
 	cache     map[string]CacheEntry
 	cacheKeys []string
 	cacheMu   sync.RWMutex
+
+	// Auto-save routine management
+	autoSaveCtx    context.Context
+	autoSaveCancel context.CancelFunc
+	autoSaveWg     sync.WaitGroup
 }
 
 // TFIDFVectorizer implements text vectorization using TF-IDF

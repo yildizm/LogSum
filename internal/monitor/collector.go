@@ -2,7 +2,9 @@ package monitor
 
 import (
 	"context"
+	"log"
 	"sync"
+	"sync/atomic"
 	"time"
 )
 
@@ -86,6 +88,9 @@ type MetricsCollector struct {
 	cancel  context.CancelFunc
 	wg      sync.WaitGroup
 	mutex   sync.RWMutex
+
+	// Dropped metrics counter
+	droppedMetrics int64
 }
 
 // New creates a new metrics collector with default configuration
@@ -148,7 +153,7 @@ func (mc *MetricsCollector) Stop() error {
 	mc.running = false
 	mc.cancel()
 
-	// Close the metric buffer
+	// Close the metric buffer to signal goroutines to stop
 	close(mc.metricBuffer)
 
 	// Wait for all goroutines to finish
@@ -221,11 +226,7 @@ func (mc *MetricsCollector) recordMemoryMetrics(memMetrics *MemoryMetrics, times
 	}
 
 	for _, metric := range metrics {
-		select {
-		case mc.metricBuffer <- metric:
-		default:
-			// Buffer full, drop metric to avoid blocking
-		}
+		mc.safelyEnqueueMetric(&metric)
 	}
 }
 
@@ -238,11 +239,7 @@ func (mc *MetricsCollector) recordCPUMetrics(cpuMetrics *CPUMetrics, timestamp t
 	}
 
 	for _, metric := range metrics {
-		select {
-		case mc.metricBuffer <- metric:
-		default:
-			// Buffer full, drop metric to avoid blocking
-		}
+		mc.safelyEnqueueMetric(&metric)
 	}
 }
 
@@ -256,11 +253,34 @@ func (mc *MetricsCollector) recordProcessingMetrics(procMetrics *ProcessingMetri
 	}
 
 	for _, metric := range metrics {
-		select {
-		case mc.metricBuffer <- metric:
-		default:
-			// Buffer full, drop metric to avoid blocking
+		mc.safelyEnqueueMetric(&metric)
+	}
+}
+
+// safelyEnqueueMetric safely sends a metric to the buffer, checking if collector is running
+func (mc *MetricsCollector) safelyEnqueueMetric(metric *Metric) {
+	// Use a defer/recover to handle panic from sending to closed channel
+	defer func() {
+		if r := recover(); r != nil {
+			// Channel was closed, increment dropped counter
+			atomic.AddInt64(&mc.droppedMetrics, 1)
 		}
+	}()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
+	defer cancel()
+
+	select {
+	case mc.metricBuffer <- *metric:
+		// Successfully enqueued
+	case <-ctx.Done():
+		// Log dropped metrics instead of silent drop
+		log.Printf("WARNING: Metric buffer full, dropped metric: %s", metric.Name)
+		// Increment dropped metric counter
+		atomic.AddInt64(&mc.droppedMetrics, 1)
+	case <-mc.ctx.Done():
+		// Collector is shutting down, ignore metric
+		return
 	}
 }
 
@@ -335,13 +355,8 @@ func (mc *MetricsCollector) RecordMetric(metric *Metric) error {
 		metric.Timestamp = time.Now()
 	}
 
-	select {
-	case mc.metricBuffer <- *metric:
-		return nil
-	default:
-		// Buffer full, return error
-		return ErrBufferFull
-	}
+	mc.safelyEnqueueMetric(metric)
+	return nil
 }
 
 // GetSnapshot returns a current metrics snapshot
@@ -401,6 +416,11 @@ func (mc *MetricsCollector) RecordBytes(count int64) {
 // GetStore returns the metrics store for advanced queries
 func (mc *MetricsCollector) GetStore() *MetricsStore {
 	return mc.store
+}
+
+// GetDroppedMetricsCount returns the number of metrics dropped due to buffer overflow
+func (mc *MetricsCollector) GetDroppedMetricsCount() int64 {
+	return atomic.LoadInt64(&mc.droppedMetrics)
 }
 
 // Custom errors
